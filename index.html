@@ -1,13 +1,2084 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>ShopFlow Pro</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<style>
+/* ============================================================
+   LAYOUT - the only rule: body scrolls normally.
+   Header sticks to top. Nav sticks to bottom.
+   Content lives between them with padding. Simple.
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #080b12; --surf: #111620; --surf2: #1a2133;
+  --brd: #1e2a3d; --brd2: #2a3854;
+  --text: #eef2ff; --muted: #6b7fa3;
+  --grn: #00f0a0; --grn-bg: #001f14;
+  --blu: #4d9fff; --blu-bg: #00122a;
+  --amb: #ffc040; --amb-bg: #1a1000;
+  --red: #ff5567; --red-bg: #1a0008;
+  --prp: #b97fff; --prp-bg: #0f0520;
+  --ff: 'DM Sans', sans-serif;
+  --fm: monospace;
+  --hdr: 54px;
+  --nav: 62px;
+}
+html { background: var(--bg); }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--ff);
+  /* Body scrolls freely - no height traps, no overflow hidden */
+  min-height: 100vh;
+}
+/* Sticky header at top */
+.hdr {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  height: var(--hdr);
+  background: #050810;
+  border-bottom: 1px solid var(--brd);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+/* Page content - just normal block flow with bottom padding so nav doesn't cover it */
+.page {
+  padding: 16px 16px calc(var(--nav) + 20px) 16px;
+  min-height: calc(100vh - var(--hdr));
+}
+/* Nav fixed to bottom */
+.nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 200;
+  height: var(--nav);
+  background: #050810;
+  border-top: 1px solid var(--brd);
+  display: flex;
+}
+/* Overlay for modals/sheets */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+/* Sheet slides up from bottom - it itself scrolls */
+.sheet {
+  background: var(--surf);
+  border-radius: 22px 22px 0 0;
+  /* Max height so it doesn't cover the whole screen */
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+.sheet-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+  padding: 16px 20px 48px;
+}
+/* Global form elements */
+input, select, textarea {
+  width: 100%;
+  background: var(--surf2);
+  border: 1.5px solid var(--brd2);
+  border-radius: 12px;
+  padding: 13px 14px;
+  color: var(--text);
+  font-family: var(--ff);
+  font-size: 15px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--grn); }
+textarea { resize: vertical; min-height: 80px; }
+button { font-family: var(--ff); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* Hide scrollbars visually but keep functionality */
+::-webkit-scrollbar { width: 0; height: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState, useEffect, useCallback, useRef} = React;
+
+/* ══════════════════════════════════════════════════════
+   SHOPFLOW SYNC - JSONBin Cloud Storage
+   ──────────────────────────────────────────────────────
+   HOW TO ACTIVATE (takes 2 minutes, completely free):
+
+   1. Go to https://jsonbin.io   ->  click "Sign Up Free"
+   2. Sign up with your email (or Google)
+   3. Once logged in, click "API Keys" in the top menu
+   4. Copy your "Secret Key" (starts with $2b$...)
+   5. Paste it below where it says PASTE_YOUR_KEY_HERE
+   6. Save the file  ->  upload to Netlify  ->  done!
+
+   Everyone who opens the link will see the same live data.
+   ══════════════════════════════════════════════════════ */
+
+const JSONBIN_KEY = "$2a$10$vuSAbRA2IhQQU51dlVp8JuPdXHaDtjqWv5st9rkbTiEVNNeIYnkii";
+// After you paste your key above, also paste your Bin ID below
+// (A bin is created automatically the first time the app saves data -
+//  the bin ID will appear in Settings after the first save)
+const JSONBIN_BIN_ID = "69a08a8dd0ea881f40dc7764";
+
+const SYNC_READY = !JSONBIN_KEY.startsWith("PASTE") && !JSONBIN_BIN_ID.startsWith("PASTE");
+const SETUP_KEY_ONLY = !JSONBIN_KEY.startsWith("PASTE") && JSONBIN_BIN_ID.startsWith("PASTE");
+
+/* ── Local storage (always used as cache) ── */
+const DB = {
+  get(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+/* ── JSONBin API ── */
+const BIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`;
+const BIN_HEADERS = {
+  "Content-Type": "application/json",
+  "X-Master-Key": JSONBIN_KEY,
+  "X-Bin-Versioning": "false",
+};
+
+async function cloudRead() {
+  if (!SYNC_READY) return null;
+  try {
+    const r = await fetch(BIN_URL, { headers: {"X-Master-Key": JSONBIN_KEY} });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j.record || null;
+  } catch(e) { console.warn("Cloud read failed:", e); return null; }
+}
+
+async function cloudWrite(data) {
+  if (!SYNC_READY) return false;
+  try {
+    const r = await fetch(BIN_URL, {
+      method: "PUT",
+      headers: BIN_HEADERS,
+      body: JSON.stringify(data),
+    });
+    return r.ok;
+  } catch(e) { console.warn("Cloud write failed:", e); return false; }
+}
+
+async function cloudCreate(data) {
+  if (JSONBIN_KEY.startsWith("PASTE")) return null;
+  try {
+    const r = await fetch("https://api.jsonbin.io/v3/b", {
+      method: "POST",
+      headers: { ...BIN_HEADERS, "X-Bin-Name": "ShopFlow-Data", "X-Bin-Private": "false" },
+      body: JSON.stringify(data),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j.metadata?.id || null;
+  } catch(e) { console.warn("Cloud create failed:", e); return null; }
+}
+
+/* ── Build full data snapshot for cloud ── */
+function buildSnapshot(data) {
+  return {
+    products:  data.products  || [],
+    suppliers: data.suppliers || [],
+    customers: data.customers || [],
+    sales:     data.sales     || [],
+    purchases: data.purchases || [],
+    expenses:  data.expenses  || [],
+    users:     data.users     || [],
+    _updated:  Date.now(),
+  };
+}
+
+/* ── Save to cloud + local cache ── */
+async function syncWrite(data) {
+  const snap = buildSnapshot(data);
+  // Always save locally first (instant)
+  Object.keys(snap).forEach(k => { if(k !== "_updated") DB.set("sf_"+k, snap[k]); });
+  // Then push to cloud
+  if (SYNC_READY) {
+    const ok = await cloudWrite(snap);
+    if (!ok) console.warn("Cloud write failed - data saved locally");
+  }
+}
+
+/* ── Constants ── */
+const CAT_LIST = ["Tops","T-Shirts","Shirts","Blouses","Dresses","Skirts","Trousers","Jeans","Denim","Shorts","Jackets","Outerwear","Knitwear","Activewear","Sportswear","Shoes","Sneakers","Sandals","Bags","Handbags","Accessories","Jewelry","Watches","Hats","Belts","Socks","Underwear","Swimwear","Suits","Kids","Other"];
+const EXP_LIST = ["Rent","Salaries","Utilities","Transport","Marketing","Supplies","Maintenance","Insurance","Equipment","Packaging","Cleaning","Fuel","Food","Phone","Internet","Other"];
+const PMTS = ["Cash","Mobile Money","Card","Bank Transfer"];
+const ROLES = ["Owner","Manager","Cashier","Staff"];
+
+/* ── Default users ── */
+const DEFAULT_USERS = [
+  {id:"USR-001", name:"Shop Owner", pin:"1234", role:"Owner", avatar:"O"},
+  {id:"USR-002", name:"Staff",      pin:"5678", role:"Cashier", avatar:"S"},
+];
+
+/* ── Helpers ── */
+const money = n => `$${(+n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",")}`;
+const pct   = (a,b) => b > 0 ? `${((a/b)*100).toFixed(1)}%` : "0.0%";
+const uid   = p => `${p}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
+const today = () => new Date().toISOString().slice(0,10);
+const sRev  = s => s.items.reduce((a,i) => a + i.qty*(i.soldPrice!=null?i.soldPrice:i.price), 0) - (s.discount||0);
+const sCost = s => s.items.reduce((a,i) => a + i.qty*(+i.cost||0), 0);
+const sProfit = s => sRev(s) - sCost(s);
+
+/* ── UI Atoms ── */
+function Tag({label, color="grn"}) {
+  const map = {
+    grn:  ["var(--grn-bg)","var(--grn)"],
+    red:  ["var(--red-bg)","var(--red)"],
+    amb:  ["var(--amb-bg)","var(--amb)"],
+    blu:  ["var(--blu-bg)","var(--blu)"],
+    prp:  ["var(--prp-bg)","var(--prp)"],
+    dim:  ["var(--surf2)","var(--muted)"],
+  };
+  const [bg,fg] = map[color]||map.dim;
+  return <span style={{background:bg,color:fg,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,whiteSpace:"nowrap",display:"inline-block"}}>{label}</span>;
+}
+
+function Btn({label, onClick, color="grn", block, small, disabled, icon}) {
+  const colors = {
+    grn:   {bg:"var(--grn)",   fg:"#000"},
+    red:   {bg:"var(--red)",   fg:"#fff"},
+    amb:   {bg:"var(--amb)",   fg:"#000"},
+    blu:   {bg:"var(--blu)",   fg:"#fff"},
+    ghost: {bg:"var(--surf2)", fg:"var(--muted)", bd:"1.5px solid var(--brd2)"},
+  };
+  const c = colors[color]||colors.grn;
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        background: c.bg, color: c.fg, border: c.bd||"none",
+        padding: small ? "9px 16px" : "14px 20px",
+        borderRadius: 13, fontSize: small ? 13 : 15, fontWeight: 700,
+        width: block ? "100%" : "auto",
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+        opacity: disabled ? 0.4 : 1, minHeight: small ? 38 : 50,
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      {icon && <span style={{fontSize: small?14:18}}>{icon}</span>}
+      {label}
+    </button>
+  );
+}
+
+function Field({label, required, children}) {
+  return (
+    <div style={{marginBottom:14}}>
+      {label && (
+        <div style={{fontSize:11,color:"var(--muted)",fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8}}>
+          {label}{required && <span style={{color:"var(--red)"}}> *</span>}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function TextInput({label, required, ...props}) {
+  return <Field label={label} required={required}><input {...props}/></Field>;
+}
+
+function SelectInput({label, required, options, ...props}) {
+  return (
+    <Field label={label} required={required}>
+      <select {...props}>
+        {options.map(o => typeof o === "string"
+          ? <option key={o} value={o}>{o}</option>
+          : <option key={o.v} value={o.v}>{o.l}</option>
+        )}
+      </select>
+    </Field>
+  );
+}
+
+function CategoryInput({label, value, onChange, existing=[]}) {
+  const all = [...new Set([...CAT_LIST, ...existing])].sort();
+  return (
+    <Field label={label}>
+      <input
+        list="cat-suggestions"
+        value={value}
+        onChange={onChange}
+        placeholder="Type anything, e.g. Shoes, Bags, Kids..."
+      />
+      <datalist id="cat-suggestions">
+        {all.map(c => <option key={c} value={c}/>)}
+      </datalist>
+      <div style={{fontSize:11,color:"var(--muted)",marginTop:5}}>💡 You can type your own - not limited to suggestions</div>
+    </Field>
+  );
+}
+
+function ExpCatInput({label, value, onChange, existing=[]}) {
+  const all = [...new Set([...EXP_LIST, ...existing])].sort();
+  return (
+    <Field label={label}>
+      <input
+        list="expcat-suggestions"
+        value={value}
+        onChange={onChange}
+        placeholder="e.g. Rent, Transport, Fuel..."
+      />
+      <datalist id="expcat-suggestions">
+        {all.map(c => <option key={c} value={c}/>)}
+      </datalist>
+    </Field>
+  );
+}
+
+function TextArea({label, ...props}) {
+  return <Field label={label}><textarea rows={3} {...props}/></Field>;
+}
+
+/* ── Toast ── */
+function Toast({msg, type, onDone}) {
+  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, []);
+  const styles = {
+    success: ["var(--grn-bg)","var(--grn)","✓"],
+    error:   ["var(--red-bg)","var(--red)","✕"],
+    info:    ["var(--blu-bg)","var(--blu)","ℹ"],
+  };
+  const [bg,fg,ic] = styles[type]||styles.info;
+  return (
+    <div style={{background:bg,border:`1.5px solid ${fg}`,color:fg,padding:"12px 16px",borderRadius:13,
+      fontSize:14,fontWeight:700,display:"flex",alignItems:"center",gap:8,
+      boxShadow:"0 8px 24px rgba(0,0,0,0.5)",pointerEvents:"none"}}>
+      {ic} {msg}
+    </div>
+  );
+}
+
+/* ── Bottom Sheet ── */
+function Sheet({title, onClose, children}) {
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={e => e.stopPropagation()}>
+        {/* Handle */}
+        <div style={{display:"flex",justifyContent:"center",paddingTop:12,paddingBottom:6,flexShrink:0}}>
+          <div style={{width:36,height:4,background:"var(--brd2)",borderRadius:4}}/>
+        </div>
+        {/* Header */}
+        <div style={{padding:"4px 20px 14px",borderBottom:"1px solid var(--brd)",
+          display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+          <div style={{fontSize:17,fontWeight:700}}>{title}</div>
+          <button onClick={onClose}
+            style={{background:"var(--surf2)",border:"none",color:"var(--muted)",
+              borderRadius:9,width:30,height:30,fontSize:14,display:"flex",
+              alignItems:"center",justifyContent:"center"}}>✕</button>
+        </div>
+        {/* Scrollable body */}
+        <div className="sheet-body">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── KPI Card ── */
+function KPI({label, value, sub, accent}) {
+  return (
+    <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,
+      padding:"14px 16px",borderLeft:`4px solid ${accent}`,flex:1,minWidth:0}}>
+      <div style={{fontSize:9,color:"var(--muted)",fontWeight:700,letterSpacing:1.2,
+        textTransform:"uppercase",marginBottom:4}}>{label}</div>
+      <div style={{fontSize:20,fontWeight:800,fontFamily:"var(--fm)",letterSpacing:-0.5}}>{value}</div>
+      {sub && <div style={{fontSize:11,color:accent,marginTop:3,fontWeight:600}}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ── Receipt Printer ── */
+function printReceipt(sale, customers) {
+  const cust = customers.find(c => c.id === sale.cid);
+  const rev = sRev(sale);
+  const w = window.open("","_blank");
+  if (!w) return;
+  w.document.write(`<!DOCTYPE html><html><head><title>Receipt</title>
+  <style>body{font-family:monospace;font-size:13px;padding:16px;max-width:300px}
+  .row{display:flex;justify-content:space-between;margin:3px 0}
+  .ctr{text-align:center}.hr{border:none;border-top:1px dashed #000;margin:8px 0}</style></head><body>
+  <div class="ctr" style="font-size:18px;font-weight:bold">SHOPFLOW PRO</div>
+  <div class="ctr">${sale.date}</div><div class="hr"></div>
+  <div class="row"><span>Receipt</span><span>${sale.id}</span></div>
+  ${cust?`<div class="row"><span>Customer</span><span>${cust.name}</span></div>`:""}
+  <div class="row"><span>Payment</span><span>${sale.payment}</span></div>
+  <div class="hr"></div>
+  ${sale.items.map(i=>{const sp=i.soldPrice!=null?i.soldPrice:i.price;
+    return`<div class="row"><span>${i.name} ×${i.qty}</span><span>${money(i.qty*sp)}</span></div>`;
+  }).join("")}
+  <div class="hr"></div>
+  <div class="row" style="font-size:16px;font-weight:bold"><span>TOTAL</span><span>${money(rev)}</span></div>
+  <div class="hr"></div><div class="ctr">Thank you! 🙏</div>
+  </body></html>`);
+  w.document.close(); w.print(); w.close();
+}
+
+/* ════════════════════════════════════════════
+   PAGES
+   ════════════════════════════════════════════ */
+
+/* ── DASHBOARD ── */
+function Dashboard({data, onSale, onExpense, toast, showAlerts, setShowAlerts}) {
+  const {products, sales, expenses, customers} = data;
+  const [showSale, setShowSale]   = useState(false);
+  const [showExp, setShowExp]     = useState(false);
+  const [receipt, setReceipt]     = useState(null);
+
+  const totRev   = sales.reduce((a,s) => a+sRev(s), 0);
+  const totProfit= sales.reduce((a,s) => a+sProfit(s), 0);
+  const totExp   = expenses.reduce((a,e) => a+e.amount, 0);
+  const net      = totProfit - totExp;
+  const low      = products.filter(p => p.stock > 0 && p.stock <= p.min).length;
+  const out      = products.filter(p => p.stock === 0 && p.min > 0).length;
+  const todaySales = sales.filter(s => s.date === today());
+  const todayRev   = todaySales.reduce((a,s) => a+sRev(s), 0);
+
+  return (
+    <div>
+      {/* Big action buttons */}
+      <div style={{display:"flex",gap:10,marginBottom:16}}>
+        <button onClick={() => setShowSale(true)}
+          style={{flex:2,background:"var(--grn)",color:"#000",border:"none",
+            borderRadius:18,padding:"20px 12px",fontWeight:800,fontSize:16,
+            display:"flex",flexDirection:"column",alignItems:"center",gap:6,
+            boxShadow:"0 4px 20px rgba(0,240,160,0.3)"}}>
+          <span style={{fontSize:28}}>💰</span>Log Sale
+        </button>
+        <button onClick={() => setShowExp(true)}
+          style={{flex:1,background:"var(--surf)",color:"var(--text)",
+            border:"1.5px solid var(--brd)",borderRadius:18,padding:"20px 8px",
+            fontWeight:700,fontSize:14,display:"flex",flexDirection:"column",
+            alignItems:"center",gap:6}}>
+          <span style={{fontSize:24}}>💸</span>Expense
+        </button>
+      </div>
+
+      {/* Today summary */}
+      <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",
+        borderRadius:18,padding:16,marginBottom:14}}>
+        <div style={{fontSize:11,color:"var(--muted)",fontWeight:700,
+          textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>
+          Today - {new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:32,fontWeight:800,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(todayRev)}</div>
+            <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{todaySales.length} sale{todaySales.length!==1?"s":""} today</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            {(low+out)>0 && (
+              <div style={{background:"var(--amb-bg)",border:"1px solid var(--amb)",
+                borderRadius:20,padding:"4px 12px",fontSize:12,color:"var(--amb)",
+                fontWeight:700,marginBottom:6}}>⚠ {low+out} stock alerts</div>
+            )}
+            {sales.length > 0 && (
+              <div style={{fontSize:12,color:"var(--muted)"}}>Net: <span style={{color:net>=0?"var(--prp)":"var(--red)",fontWeight:700}}>{money(net)}</span></div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Stock summary - always show when products exist */}
+      {products.length > 0 && (
+        <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:14,marginBottom:14}}>
+          <div style={{fontSize:11,color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Stock Overview</div>
+          {(()=>{
+            const stockCost   = products.reduce((a,p)=>a+p.stock*(+p.cost||0),0);
+            const retailVal   = products.reduce((a,p)=>a+p.stock*(+p.price||0),0);
+            const projProfit  = retailVal - stockCost;
+            const projMargin  = retailVal>0 ? ((projProfit/retailVal)*100).toFixed(1)+"%" : "-";
+            return (
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <div style={{flex:"1 0 40%"}}>
+                  <div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>PRODUCTS</div>
+                  <div style={{fontWeight:800,fontSize:17}}>{products.length}</div>
+                </div>
+                <div style={{flex:"1 0 40%"}}>
+                  <div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>STOCK COST VALUE</div>
+                  <div style={{fontWeight:800,fontSize:17,color:"var(--amb)",fontFamily:"var(--fm)"}}>{money(stockCost)}</div>
+                </div>
+                <div style={{flex:"1 0 40%"}}>
+                  <div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>RETAIL VALUE</div>
+                  <div style={{fontWeight:800,fontSize:17,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(retailVal)}</div>
+                </div>
+                <div style={{flex:"1 0 40%"}}>
+                  <div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>PROJECTED MARGIN</div>
+                  <div style={{fontWeight:800,fontSize:17,color:"var(--prp)",fontFamily:"var(--fm)"}}>{projMargin}</div>
+                </div>
+                {(low+out)>0&&<div style={{flex:"1 0 40%"}}><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>STOCK ALERTS</div><div style={{fontWeight:800,fontSize:17,color:"var(--amb)"}}>{low+out}</div></div>}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Welcome only if truly empty */}
+      {products.length === 0 && sales.length === 0 && (
+        <div style={{background:"var(--blu-bg)",border:"1.5px solid var(--blu)",
+          borderRadius:16,padding:16,marginBottom:14}}>
+          <div style={{fontWeight:700,color:"var(--blu)",marginBottom:8}}>👋 Welcome! Starting fresh.</div>
+          <div style={{fontSize:13,lineHeight:1.9}}>
+            1. Go to <b>Stock</b>  ->  Add your products<br/>
+            2. Go to <b>Buy</b>  ->  Log what you purchased<br/>
+            3. Tap <b>Log Sale</b> above to record sales<br/>
+            4. Go to <b>Spend</b>  ->  Track expenses
+          </div>
+        </div>
+      )}
+
+      {/* KPIs - always show totals when any data exists */}
+      {(sales.length > 0 || expenses.length > 0 || data.purchases.length > 0) && (
+        <>
+          <div style={{display:"flex",gap:10,marginBottom:10}}>
+            <KPI label="Revenue"      value={money(totRev)}    sub={`${sales.length} sale${sales.length!==1?"s":""}`} accent="var(--grn)"/>
+            <KPI label="Gross Profit" value={money(totProfit)} sub={totRev>0?pct(totProfit,totRev):"-"} accent="var(--blu)"/>
+          </div>
+          <div style={{display:"flex",gap:10,marginBottom:10}}>
+            <KPI label="Stock Cost"  value={money(data.purchases.reduce((a,p)=>a+p.items.reduce((b,i)=>b+i.qty*i.cost,0),0))} sub={`${data.purchases.length} purchase${data.purchases.length!==1?"s":""}`} accent="var(--amb)"/>
+            <KPI label="Expenses"   value={money(totExp)} accent="var(--red)"/>
+          </div>
+          <div style={{display:"flex",gap:10,marginBottom:16}}>
+            <KPI label="Net Profit" value={money(net)}    sub={net>=0?"↑ profit":"↓ loss"} accent={net>=0?"var(--prp)":"var(--red)"}/>
+          </div>
+        </>
+      )}
+
+      {/* Recent sales */}
+      {sales.length > 0 && (
+        <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:18,padding:16}}>
+          <div style={{fontWeight:700,fontSize:15,marginBottom:12}}>Recent Sales</div>
+          {[...sales].reverse().slice(0,8).map((s,i,arr) => (
+            <div key={s.id} onClick={() => setReceipt(s)}
+              style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                padding:"10px 0",borderBottom:i<arr.length-1?"1px solid var(--brd)":"none",cursor:"pointer"}}>
+              <div style={{flex:1,minWidth:0,paddingRight:10}}>
+                <div style={{fontWeight:600,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {s.items.map(i=>i.name).join(", ")}
+                </div>
+                <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{s.date} • {s.payment}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontWeight:800,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(sRev(s))}</div>
+                <div style={{fontSize:11,color:"var(--blu)",fontFamily:"var(--fm)"}}>+{money(sProfit(s))}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showSale && <SaleSheet data={data} onSale={s=>{onSale(s);setShowSale(false);}} toast={toast} onClose={()=>setShowSale(false)}/>}
+      {showExp  && <ExpSheet  data={data} onExpense={e=>{onExpense(e);setShowExp(false);}} toast={toast} onClose={()=>setShowExp(false)}/>}
+      {receipt  && <ReceiptSheet sale={receipt} customers={customers} onClose={()=>setReceipt(null)}/>}
+      {/* StockAlertSheet rendered at App level */}
+    </div>
+  );
+}
+
+/* ── Stock Alert Sheet ── */
+function StockAlertSheet({products, onClose}) {
+  const alertItems = products.filter(p=>p.stock===0||(p.stock<=p.min&&p.min>0)).sort((a,b)=>a.stock-b.stock);
+  const printPDF = () => {
+    const w = window.open("","_blank");
+    if (!w) return;
+    const rows = alertItems.map(p=>`
+      <tr style="background:${p.stock===0?"#fff0f0":"#fffbe6"}">
+        <td>${p.name}</td>
+        <td>${p.id}</td>
+        <td>${p.cat||"-"}</td>
+        <td style="text-align:center;font-weight:bold;color:${p.stock===0?"#c00":"#a06000"}">${p.stock}</td>
+        <td style="text-align:center">${p.min}</td>
+        <td style="text-align:center">${Math.max(0,p.min-p.stock+5)}</td>
+      </tr>`).join("");
+    w.document.write(`<!DOCTYPE html><html><head><title>Stock Alert Report</title>
+    <style>body{font-family:Arial,sans-serif;padding:24px;font-size:13px}
+    h2{margin-bottom:4px}p{color:#666;margin:0 0 16px}
+    table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px 10px;text-align:left}
+    th{background:#f0f0f0;font-weight:bold}tr:nth-child(even){background:#fafafa}
+    .out{color:#c00;font-weight:bold}.low{color:#a06000;font-weight:bold}
+    @media print{button{display:none}}</style></head><body>
+    <h2>📦 ShopFlow Pro - Stock Alert Report</h2>
+    <p>Generated: ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})} | ${alertItems.length} item(s) need restocking</p>
+    <table><thead><tr><th>Product</th><th>Code</th><th>Category</th><th>Current Stock</th><th>Min Alert</th><th>Suggested Order</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <br/><p style="font-size:11px;color:#999">Suggested order = items needed to bring stock 5 above minimum alert level.</p>
+    <button onclick="window.print()" style="margin-top:12px;padding:10px 20px;background:#007700;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">🖨 Print / Save as PDF</button>
+    </body></html>`);
+    w.document.close();
+  };
+  return (
+    <Sheet title={`⚠ Stock Alerts (${alertItems.length})`} onClose={onClose}>
+      {alertItems.length === 0 && (
+        <div style={{textAlign:"center",padding:"30px 0",color:"var(--grn)",fontWeight:700}}>✓ All stock levels are fine!</div>
+      )}
+      {alertItems.length > 0 && (
+        <>
+          <div style={{background:"var(--amb-bg)",border:"1.5px solid var(--amb)",borderRadius:12,
+            padding:"10px 14px",marginBottom:14,fontSize:13,color:"var(--amb)"}}>
+            {alertItems.filter(p=>p.stock===0).length} out of stock • {alertItems.filter(p=>p.stock>0&&p.stock<=p.min).length} running low
+          </div>
+          {alertItems.map((p,i) => (
+            <div key={p.id} style={{background:"var(--surf2)",border:`1.5px solid ${p.stock===0?"var(--red)":"var(--amb)"}`,
+              borderRadius:14,padding:12,marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <div style={{fontWeight:700,fontSize:14}}>{p.name}</div>
+                <span style={{fontWeight:800,color:p.stock===0?"var(--red)":"var(--amb)",fontFamily:"var(--fm)",fontSize:16}}>{p.stock}</span>
+              </div>
+              <div style={{fontSize:12,color:"var(--muted)"}}>{p.cat||"-"} • Min: {p.min} • Suggested order: {Math.max(0,p.min-p.stock+5)}</div>
+            </div>
+          ))}
+          <Btn label="📄 Download PDF Report" color="amb" onClick={printPDF} block/>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+/* ── SALE SHEET ── */
+function SaleSheet({data, onSale, toast, onClose}) {
+  const {products, customers} = data;
+  const [step, setStep]       = useState("pick"); // pick | qty | confirm
+  const [items, setItems]     = useState([]);
+  const [selP, setSelP]       = useState(null);
+  const [qty, setQty]         = useState("1");
+  const [soldPrice, setSP]    = useState("");
+  const [search, setSearch]   = useState("");
+  const [catF, setCatF]       = useState("All");
+  const [payment, setPayment] = useState("Cash");
+  const [cid, setCid]         = useState("");
+
+  const existingCats = [...new Set(products.map(p=>p.cat).filter(Boolean))];
+  const allCats = ["All", ...new Set([...CAT_LIST, ...existingCats])];
+  const filtered = products.filter(p =>
+    (catF==="All" || p.cat===catF) &&
+    (!search || p.name.toLowerCase().includes(search.toLowerCase()))
+  );
+  const cartTotal = items.reduce((a,i) => a+i.qty*(i.soldPrice!=null?i.soldPrice:i.price), 0);
+  const cartProfit= items.reduce((a,i) => a+i.qty*((i.soldPrice!=null?i.soldPrice:i.price)-i.cost), 0);
+
+  const pickProduct = p => { setSelP(p); setSP(p.price.toFixed(2)); setQty("1"); setStep("qty"); };
+  const addItem = () => {
+    const sp = soldPrice !== "" ? +soldPrice : selP.price;
+    const q = +qty||1;
+    setItems(prev => {
+      const ex = prev.find(i => i.pid===selP.id);
+      if (ex) return prev.map(i => i.pid===selP.id ? {...i, qty:i.qty+q, soldPrice:sp} : i);
+      return [...prev, {pid:selP.id, name:selP.name, qty:q, cost:selP.cost, price:selP.price, soldPrice:sp}];
+    });
+    setStep("pick"); setSelP(null); setSearch("");
+  };
+  const submit = () => {
+    if (!items.length) { toast("Add at least one item","error"); return; }
+    onSale({id:uid("REC"), date:today(), items, cid, payment, discount:0});
+    toast(`Sale saved! ${money(cartTotal)}`, "success");
+  };
+
+  return (
+    <Sheet title={step==="pick"?"Log Sale - Add Items":step==="qty"?selP?.name:"Confirm Sale"} onClose={onClose}>
+      {/* STEP: PICK */}
+      {step==="pick" && (
+        <>
+          {/* Cart summary */}
+          {items.length > 0 && (
+            <div style={{background:"var(--grn-bg)",border:"1.5px solid var(--grn)",borderRadius:14,padding:12,marginBottom:14}}>
+              <div style={{fontSize:12,color:"var(--grn)",fontWeight:700,marginBottom:8}}>{items.length} item(s) in cart</div>
+              {items.map((it,i) => (
+                <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"2px 0"}}>
+                  <span style={{flex:1}}>{it.name} ×{it.qty}</span>
+                  <span style={{color:"var(--grn)",fontFamily:"var(--fm)",fontWeight:700}}>{money(it.qty*(it.soldPrice!=null?it.soldPrice:it.price))}</span>
+                  <button onClick={()=>setItems(p=>p.filter(x=>x.pid!==it.pid))}
+                    style={{background:"none",border:"none",color:"var(--red)",fontSize:13,marginLeft:8,padding:"0 4px"}}>✕</button>
+                </div>
+              ))}
+              <div style={{borderTop:"1px solid var(--brd)",marginTop:8,paddingTop:8,display:"flex",justifyContent:"space-between",fontWeight:700,fontSize:15}}>
+                <span>Total</span><span style={{color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(cartTotal)}</span>
+              </div>
+              <div style={{marginTop:10}}>
+                <Btn label="✓ Proceed to Confirm" onClick={()=>setStep("confirm")} block/>
+              </div>
+            </div>
+          )}
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search products..." style={{marginBottom:10}}/>
+          {/* Category pills */}
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:8,marginBottom:10}}>
+            {allCats.filter(c=>c==="All"||products.some(p=>p.cat===c)).slice(0,15).map(c => (
+              <button key={c} onClick={()=>setCatF(c)}
+                style={{padding:"6px 13px",borderRadius:20,border:"none",whiteSpace:"nowrap",flexShrink:0,
+                  background:catF===c?"var(--grn)":"var(--surf2)",color:catF===c?"#000":"var(--muted)",
+                  fontSize:12,fontWeight:700}}>
+                {c}
+              </button>
+            ))}
+          </div>
+          {filtered.length === 0 && (
+            <div style={{textAlign:"center",padding:"30px 0",color:"var(--muted)"}}>
+              No products.<br/><span style={{fontSize:12}}>Add products in the Stock tab first.</span>
+            </div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {filtered.map(p => {
+              const inCart = items.find(i=>i.pid===p.id);
+              return (
+                <div key={p.id} onClick={()=>pickProduct(p)}
+                  style={{background:"var(--surf2)",border:`1.5px solid ${p.stock<=0?"var(--red)":p.stock<=p.min?"var(--amb)":"var(--brd2)"}`,
+                    borderRadius:14,padding:12,cursor:"pointer",position:"relative"}}>
+                  <div style={{fontSize:9,color:"var(--muted)",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{p.cat||"-"}</div>
+                  <div style={{fontSize:13,fontWeight:700,lineHeight:1.3,marginBottom:5}}>{p.name}</div>
+                  <div style={{fontSize:18,fontWeight:800,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(p.price)}</div>
+                  <div style={{fontSize:11,color:p.stock<=p.min?"var(--amb)":"var(--muted)",marginTop:4}}>Stock: {p.stock}</div>
+                  {inCart && (
+                    <div style={{position:"absolute",top:8,right:8,background:"var(--grn)",color:"#000",
+                      borderRadius:"50%",width:20,height:20,display:"flex",alignItems:"center",
+                      justifyContent:"center",fontWeight:800,fontSize:11}}>{inCart.qty}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* STEP: QTY */}
+      {step==="qty" && selP && (
+        <>
+          <div style={{background:"var(--surf2)",borderRadius:14,padding:14,marginBottom:16}}>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{selP.name}</div>
+            <div style={{fontSize:13,color:"var(--muted)"}}>List price: {money(selP.price)} • Cost: {money(selP.cost)} • In stock: {selP.stock}</div>
+          </div>
+          <Field label="Actual Sold Price ($) - change if sold cheaper or higher">
+            <input type="number" value={soldPrice} onChange={e=>setSP(e.target.value)} step="0.01" inputMode="decimal"/>
+          </Field>
+          {soldPrice && +soldPrice < selP.price && (
+            <div style={{background:"var(--amb-bg)",border:"1.5px solid var(--amb)",borderRadius:12,
+              padding:"10px 14px",marginBottom:12,fontSize:12,color:"var(--amb)"}}>
+              ⚠ Below list by {money(selP.price - +soldPrice)} - profit per unit: {money(+soldPrice - selP.cost)}
+            </div>
+          )}
+          <Field label="Quantity">
+            <input type="number" value={qty} onChange={e=>setQty(e.target.value)} min="1" max={selP.stock} inputMode="numeric"/>
+          </Field>
+          {soldPrice && qty && (
+            <div style={{background:"var(--surf2)",borderRadius:12,padding:"12px 14px",marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{color:"var(--muted)",fontSize:13}}>Revenue</span>
+                <span style={{fontWeight:700,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money((+qty||1)*(+soldPrice||0))}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span style={{color:"var(--muted)",fontSize:13}}>Profit</span>
+                <span style={{fontWeight:700,color:"var(--blu)",fontFamily:"var(--fm)"}}>{money((+qty||1)*((+soldPrice||0)-selP.cost))}</span>
+              </div>
+            </div>
+          )}
+          <div style={{display:"flex",gap:10}}>
+            <Btn label="Add to Cart" onClick={addItem} block/>
+            <Btn label="← Back" color="ghost" onClick={()=>{setSelP(null);setStep("pick");}}/>
+          </div>
+        </>
+      )}
+
+      {/* STEP: CONFIRM */}
+      {step==="confirm" && (
+        <>
+          <div style={{background:"var(--surf2)",borderRadius:14,padding:14,marginBottom:14}}>
+            {items.map((it,i) => (
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",
+                borderBottom:i<items.length-1?"1px solid var(--brd)":"none"}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14}}>{it.name}</div>
+                  <div style={{fontSize:12,color:"var(--muted)"}}>{it.qty} × {money(it.soldPrice!=null?it.soldPrice:it.price)}</div>
+                </div>
+                <span style={{fontWeight:700,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(it.qty*(it.soldPrice!=null?it.soldPrice:it.price))}</span>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4,
+              borderTop:"1px solid var(--brd2)",fontWeight:700,fontSize:18}}>
+              <span>Total</span><span style={{color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(cartTotal)}</span>
+            </div>
+            <div style={{fontSize:13,color:"var(--blu)",textAlign:"right",marginTop:2,fontFamily:"var(--fm)"}}>Profit: {money(cartProfit)}</div>
+          </div>
+          <SelectInput label="Customer (optional)" value={cid} onChange={e=>setCid(e.target.value)}
+            options={[{v:"",l:"- Walk-in customer -"},...data.customers.map(c=>({v:c.id,l:c.name}))]}/>
+          <SelectInput label="Payment Method" value={payment} onChange={e=>setPayment(e.target.value)} options={PMTS}/>
+          <div style={{display:"flex",gap:10,marginTop:8}}>
+            <Btn label={`Confirm - ${money(cartTotal)}`} onClick={submit} block/>
+            <Btn label="← Edit" color="ghost" onClick={()=>setStep("pick")}/>
+          </div>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+/* ── RECEIPT SHEET ── */
+function ReceiptSheet({sale, customers, onClose}) {
+  const cust = customers.find(c=>c.id===sale.cid);
+  const rev  = sRev(sale);
+  return (
+    <Sheet title="Receipt 🧾" onClose={onClose}>
+      <div style={{fontFamily:"var(--fm)",fontSize:13,lineHeight:1.9,
+        background:"var(--surf2)",borderRadius:14,padding:14,marginBottom:14}}>
+        <div style={{textAlign:"center",marginBottom:10}}>
+          <div style={{fontSize:16,fontWeight:700,color:"var(--grn)",fontFamily:"var(--ff)"}}>SHOPFLOW PRO</div>
+          <div style={{fontSize:11,color:"var(--muted)"}}>{sale.date}</div>
+        </div>
+        <div style={{borderTop:"1px dashed var(--brd2)",borderBottom:"1px dashed var(--brd2)",padding:"6px 0",margin:"6px 0"}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--muted)"}}><span>Receipt #</span><span>{sale.id}</span></div>
+          {cust&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--muted)"}}><span>Customer</span><span>{cust.name}</span></div>}
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--muted)"}}><span>Payment</span><span>{sale.payment}</span></div>
+        </div>
+        {sale.items.map((it,i) => {
+          const sp = it.soldPrice!=null?it.soldPrice:it.price;
+          return (
+            <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid var(--brd)"}}>
+              <div>
+                <div style={{fontWeight:600}}>{it.name}</div>
+                <div style={{fontSize:11,color:"var(--muted)"}}>{it.qty} × {money(sp)}</div>
+              </div>
+              <span style={{fontWeight:700,color:"var(--grn)"}}>{money(it.qty*sp)}</span>
+            </div>
+          );
+        })}
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:20,fontWeight:700,
+          color:"var(--grn)",borderTop:"1px solid var(--brd2)",paddingTop:8,marginTop:6}}>
+          <span>TOTAL</span><span>{money(rev)}</span>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <Btn label="🖨 Print" onClick={()=>printReceipt(sale,customers)} block/>
+        <Btn label="Close" color="ghost" onClick={onClose} block/>
+      </div>
+    </Sheet>
+  );
+}
+
+/* ── EXPENSE SHEET ── */
+function ExpSheet({data, onExpense, toast, onClose}) {
+  const [form, setForm] = useState({date:today(), cat:"", desc:"", amount:"", payment:"Cash"});
+  const F = k => e => setForm(f => ({...f, [k]:e.target.value}));
+  const submit = () => {
+    if (!form.cat.trim()) { toast("Enter a category","error"); return; }
+    if (!form.amount || +form.amount <= 0) { toast("Enter a valid amount","error"); return; }
+    onExpense({id:uid("EXP"), ...form, amount:+form.amount});
+    toast("Expense saved!","success");
+  };
+  const existing = [...new Set(data.expenses.map(e=>e.cat).filter(Boolean))];
+  return (
+    <Sheet title="Log Expense 💸" onClose={onClose}>
+      <TextInput  label="Date" type="date" value={form.date} onChange={F("date")}/>
+      <ExpCatInput label="Category *" value={form.cat} onChange={F("cat")} existing={existing}/>
+      <TextInput  label="Description" value={form.desc} onChange={F("desc")} placeholder="e.g. Monthly shop rent"/>
+      <TextInput  label="Amount ($) *" type="number" value={form.amount} onChange={F("amount")} inputMode="decimal" step="0.01"/>
+      <SelectInput label="Payment" value={form.payment} onChange={F("payment")} options={PMTS}/>
+      <Btn label="Save Expense" color="red" onClick={submit} block/>
+    </Sheet>
+  );
+}
+
+/* ── SALES LOG PAGE ── */
+function SalesPage({data, onSale, onEditSale, onDeleteSale, toast}) {
+  const {sales, customers} = data;
+  const [showSale, setShowSale] = useState(false);
+  const [receipt, setReceipt]   = useState(null);
+  const [editSale, setEditSale] = useState(null);
+  const sorted = [...sales].reverse();
+  const totRev = sorted.reduce((a,s)=>a+sRev(s),0);
+  const totPro = sorted.reduce((a,s)=>a+sProfit(s),0);
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontSize:18,fontWeight:800}}>Sales Log</div>
+        <Btn label="+ New Sale" small onClick={()=>setShowSale(true)}/>
+      </div>
+      {sorted.length > 0 && (
+        <div style={{display:"flex",gap:10,marginBottom:16}}>
+          <KPI label="Revenue" value={money(totRev)} accent="var(--grn)"/>
+          <KPI label="Profit"  value={money(totPro)} accent="var(--blu)"/>
+        </div>
+      )}
+      {sorted.length === 0 && (
+        <div style={{textAlign:"center",padding:"50px 0",color:"var(--muted)"}}>
+          No sales yet.<br/><span style={{fontSize:12}}>Tap "New Sale" to record your first sale.</span>
+        </div>
+      )}
+      {sorted.map((s,i) => {
+        const rev=sRev(s), pro=sProfit(s), cust=customers.find(c=>c.id===s.cid);
+        return (
+          <div key={s.id} style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:14,marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,gap:8}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {s.items.map(i=>i.name).join(", ")}
+                </div>
+                <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{s.date} • {cust?cust.name:"Walk-in"}</div>
+              </div>
+              <Tag label={s.payment} color={s.payment==="Cash"?"amb":"prp"}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{display:"flex",gap:14}}>
+                <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>REVENUE</div><div style={{fontWeight:800,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(rev)}</div></div>
+                <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>PROFIT</div><div style={{fontWeight:700,color:"var(--blu)",fontFamily:"var(--fm)"}}>{money(pro)}</div></div>
+                <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>MARGIN</div><div style={{fontWeight:600}}>{pct(pro,rev)}</div></div>
+              </div>
+              <div style={{display:"flex",gap:5}}>
+                <Btn label="✏" small color="ghost" onClick={()=>setEditSale(s)}/>
+                <Btn label="🧾" small color="ghost" onClick={()=>setReceipt(s)}/>
+                <Btn label="✕" small color="ghost" onClick={()=>{ if(confirm("Delete this sale? Stock will NOT be restored.")) onDeleteSale(s.id); }}/>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {showSale && <SaleSheet data={data} onSale={s=>{onSale(s);setShowSale(false);}} toast={toast} onClose={()=>setShowSale(false)}/>}
+      {receipt  && <ReceiptSheet sale={receipt} customers={customers} onClose={()=>setReceipt(null)}/>}
+      {editSale && <EditSaleSheet sale={editSale} data={data} onSave={s=>{onEditSale(s);setEditSale(null);toast("Sale updated!","success");}} onClose={()=>setEditSale(null)}/>}
+    </div>
+  );
+}
+
+/* ── Edit Sale Sheet ── */
+function EditSaleSheet({sale, data, onSave, onClose}) {
+  const [form, setForm] = useState({...sale, items: sale.items.map(it=>({...it, soldPrice: it.soldPrice!=null?String(it.soldPrice):String(it.price)}))});
+  const F = k => e => setForm(f=>({...f,[k]:e.target.value}));
+  const setItem = (i,k,v) => setForm(f=>({...f,items:f.items.map((it,j)=>j===i?{...it,[k]:v}:it)}));
+  const total = form.items.reduce((a,it)=>a+(+it.qty||0)*(+it.soldPrice||0),0);
+  const save = () => {
+    const updated = {...form, items: form.items.map(it=>({...it, qty:+it.qty||1, soldPrice:+it.soldPrice||+it.price}))};
+    onSave(updated);
+  };
+  return (
+    <Sheet title="Edit Sale ✏" onClose={onClose}>
+      <TextInput label="Date" type="date" value={form.date} onChange={F("date")}/>
+      <SelectInput label="Payment" value={form.payment} onChange={F("payment")} options={PMTS}/>
+      <SelectInput label="Customer" value={form.cid||""} onChange={F("cid")}
+        options={[{v:"",l:"- Walk-in -"},...data.customers.map(c=>({v:c.id,l:c.name}))]}/>
+      <div style={{fontSize:11,color:"var(--muted)",fontWeight:700,marginBottom:10,textTransform:"uppercase",letterSpacing:0.8}}>Items</div>
+      {form.items.map((it,i)=>(
+        <div key={i} style={{background:"var(--surf2)",borderRadius:12,padding:12,marginBottom:10}}>
+          <div style={{fontWeight:700,marginBottom:8,fontSize:14}}>{it.name}</div>
+          <div style={{display:"flex",gap:8}}>
+            <div style={{flex:1}}><TextInput label="Qty" type="number" value={String(it.qty)} onChange={e=>setItem(i,"qty",e.target.value)} inputMode="numeric"/></div>
+            <div style={{flex:1}}><TextInput label="Sold Price ($)" type="number" value={String(it.soldPrice)} onChange={e=>setItem(i,"soldPrice",e.target.value)} inputMode="decimal" step="0.01"/></div>
+          </div>
+        </div>
+      ))}
+      <div style={{background:"var(--grn-bg)",borderRadius:12,padding:"12px 14px",marginBottom:14,fontWeight:700,color:"var(--grn)",fontFamily:"var(--fm)"}}>
+        Total: {money(total)}
+      </div>
+      <Btn label="Save Changes" onClick={save} block/>
+    </Sheet>
+  );
+}
+
+/* ── Top Up Sheet (Quick Purchase / Stock In) ── */
+function TopUpSheet({products, onPurchase, onClose}) {
+  const [items, setItems] = useState([{pid:"",qty:"",cost:""}]);
+  const [supplier, setSupplier] = useState("");
+  const [date, setDate] = useState(today());
+  const [payment, setPayment] = useState("Cash");
+  const setItem = (i,k,v) => setItems(prev=>prev.map((it,j)=>j===i?{...it,[k]:v}:it));
+  const autoFill = (i,pid) => {
+    setItem(i,"pid",pid);
+    const p = products.find(x=>x.id===pid);
+    if (p) setItem(i,"cost",String(p.cost));
+  };
+  const addRow = () => setItems(p=>[...p,{pid:"",qty:"",cost:""}]);
+  const remRow = i => setItems(p=>p.filter((_,j)=>j!==i));
+  const total = items.reduce((a,it)=>a+(+it.qty||0)*(+it.cost||0),0);
+  const submit = () => {
+    for(let it of items){
+      if(!it.pid){alert("Select a product");return;}
+      if(!(+it.qty>0)){alert("Enter quantity");return;}
+      if(it.cost===""||it.cost===undefined){alert("Enter cost (enter 0 if you got it free)");return;}
+    }
+    const po = {
+      id:uid("PO"), date, supplier, payment, note:"",
+      items:items.map(it=>({pid:it.pid, name:products.find(p=>p.id===it.pid)?.name||it.pid, qty:+it.qty, cost:+it.cost}))
+    };
+    onPurchase(po);
+  };
+  return (
+    <Sheet title="📦 Top Up / Log Purchase" onClose={onClose}>
+      <div style={{background:"var(--blu-bg)",border:"1.5px solid var(--blu)",borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:12,color:"var(--blu)"}}>
+        This adds stock to existing products and records the cost spent.
+        Stock value on dashboard updates automatically.
+      </div>
+      <TextInput label="Date" type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+      <TextInput label="Supplier / Where you bought from" value={supplier} onChange={e=>setSupplier(e.target.value)} placeholder="e.g. Kantamanto, 0244123456, Fashion Hub"/>
+      <SelectInput label="Payment" value={payment} onChange={e=>setPayment(e.target.value)} options={PMTS}/>
+      <div style={{fontSize:11,color:"var(--muted)",fontWeight:700,marginBottom:10,textTransform:"uppercase",letterSpacing:0.8}}>Products Bought</div>
+      {items.map((item,i)=>(
+        <div key={i} style={{background:"var(--surf2)",borderRadius:12,padding:12,marginBottom:10}}>
+          <Field label="Product">
+            <select value={item.pid} onChange={e=>autoFill(i,e.target.value)}>
+              <option value="">- Select product -</option>
+              {products.map(p=><option key={p.id} value={p.id}>{p.name} (stock: {p.stock})</option>)}
+            </select>
+          </Field>
+          <div style={{display:"flex",gap:8}}>
+            <div style={{flex:1}}><TextInput label="Qty bought" type="number" value={item.qty} onChange={e=>setItem(i,"qty",e.target.value)} inputMode="numeric" min="1"/></div>
+            <div style={{flex:1}}><TextInput label="Cost per unit ($)" type="number" value={item.cost} onChange={e=>setItem(i,"cost",e.target.value)} inputMode="decimal" step="0.01"/></div>
+          </div>
+          {item.qty&&item.cost&&<div style={{fontSize:12,color:"var(--amb)",fontWeight:700,marginBottom:6}}>Subtotal: {money((+item.qty||0)*(+item.cost||0))}</div>}
+          {items.length>1&&<Btn label="Remove row" small color="ghost" onClick={()=>remRow(i)} block/>}
+        </div>
+      ))}
+      <Btn label="+ Add Another Product" small color="ghost" onClick={addRow} block/>
+      <div style={{background:"var(--amb-bg)",border:"1.5px solid var(--amb)",borderRadius:12,padding:"12px 14px",margin:"12px 0",fontWeight:700,color:"var(--amb)",fontFamily:"var(--fm)",fontSize:17}}>
+        Total Spent: {money(total)}
+      </div>
+      <Btn label="✓ Save & Update Stock" color="amb" onClick={submit} block/>
+    </Sheet>
+  );
+}
+
+/* ── STOCK PAGE ── */
+function StockPage({data, onUpdate, onPurchase, toast}) {
+  const {products, suppliers} = data;
+  const [search, setSearch]   = useState("");
+  const [filter, setFilter]   = useState("All");
+  const [sheet, setSheet]     = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm]       = useState({});
+  const [showTopUp, setShowTopUp] = useState(false);
+
+  const status = p => p.stock === 0 ? "Out" : p.stock <= p.min ? "Low" : "OK";
+  const stColor = {OK:"grn", Low:"amb", Out:"red"};
+
+  const filtered = products.filter(p =>
+    (filter==="All" || status(p)===filter) &&
+    (!search || p.name.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const openAdd = () => {
+    setForm({id:"", name:"", cat:"", size:"", color:"", cost:"", price:"", stock:"0", min:"5", barcode:"", sid:""});
+    setEditing(null); setSheet(true);
+  };
+  const openEdit = p => { setForm({...p, cost:String(p.cost), price:String(p.price), stock:String(p.stock), min:String(p.min)}); setEditing(p.id); setSheet(true); };
+
+  const save = () => {
+    if (!form.id.trim()) { toast("Item code is required","error"); return; }
+    if (!form.name.trim()) { toast("Product name is required","error"); return; }
+    if (!editing && products.find(p=>p.id===form.id)) { toast("Item code already exists","error"); return; }
+    const p = {...form, cost:+form.cost||0, price:+form.price||0, stock:+form.stock||0, min:+form.min||5};
+    onUpdate("products", editing ? products.map(x=>x.id===editing?p:x) : [p,...products]);
+    setSheet(false); toast(editing?"Product updated!":"Product added!","success");
+  };
+  const del = id => {
+    if (!confirm("Delete this product?")) return;
+    onUpdate("products", products.filter(p=>p.id!==id));
+    toast("Deleted","info");
+  };
+
+  const F = k => e => setForm(f=>({...f,[k]:e.target.value}));
+  const existingCats = [...new Set(products.map(p=>p.cat).filter(Boolean))];
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontSize:18,fontWeight:800}}>Stock</div>
+        <div style={{display:"flex",gap:6}}>
+          <Btn label="📦 Top Up" small color="amb" onClick={()=>setShowTopUp(true)}/>
+          <Btn label="+ Product" small onClick={openAdd}/>
+        </div>
+      </div>
+
+      {/* Stock Value Summary */}
+      {products.length > 0 && (
+        <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:14,marginBottom:14}}>
+          <div style={{fontSize:10,color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Current Stock Value</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <div style={{flex:"1 0 45%"}}>
+              <div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>COST VALUE (what you paid)</div>
+              <div style={{fontWeight:800,fontSize:19,color:"var(--amb)",fontFamily:"var(--fm)"}}>{money(products.reduce((a,p)=>a+p.stock*(+p.cost||0),0))}</div>
+            </div>
+            <div style={{flex:"1 0 45%"}}>
+              <div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>RETAIL VALUE (if all sold)</div>
+              <div style={{fontWeight:800,fontSize:19,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(products.reduce((a,p)=>a+p.stock*(+p.price||0),0))}</div>
+            </div>
+          </div>
+          <div style={{fontSize:11,color:"var(--muted)",marginTop:6}}>↕ Updates automatically as you make sales or add stock</div>
+        </div>
+      )}
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search products..." style={{marginBottom:10}}/>
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {["All","OK","Low","Out"].map(f => (
+          <button key={f} onClick={()=>setFilter(f)}
+            style={{padding:"7px 14px",borderRadius:20,border:"none",
+              background:filter===f?"var(--grn)":"var(--surf2)",
+              color:filter===f?"#000":"var(--muted)",fontSize:12,fontWeight:700}}>
+            {f}
+          </button>
+        ))}
+      </div>
+      {filtered.length === 0 && (
+        <div style={{textAlign:"center",padding:"50px 0",color:"var(--muted)"}}>
+          {products.length===0?"No products yet. Tap \"+ Add Product\" to start.":"No products match your filter."}
+        </div>
+      )}
+      {filtered.map(p => (
+        <div key={p.id} style={{background:"var(--surf)",border:`1.5px solid ${status(p)==="Out"?"var(--red)":status(p)==="Low"?"var(--amb)":"var(--brd)"}`,borderRadius:16,padding:14,marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,gap:8}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:800,fontSize:15}}>{p.name}</div>
+              <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{p.id}{p.cat&&` • ${p.cat}`}{p.color&&` • ${p.color}`}</div>
+            </div>
+            <Tag label={status(p)} color={stColor[status(p)]}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+              <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>COST</div><div style={{fontWeight:700,fontFamily:"var(--fm)"}}>{money(p.cost)}</div></div>
+              <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>PRICE</div><div style={{fontWeight:700,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(p.price)}</div></div>
+              <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>STOCK</div><div style={{fontWeight:800,fontSize:16,color:p.stock<=p.min?"var(--amb)":"var(--text)"}}>{p.stock}</div></div>
+              <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>MARGIN</div><div style={{fontWeight:600,color:"var(--blu)",fontFamily:"var(--fm)"}}>{pct(p.price-p.cost,p.price)}</div></div>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <Btn label="Edit" small color="ghost" onClick={()=>openEdit(p)}/>
+              <Btn label="✕" small color="ghost" onClick={()=>del(p.id)}/>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {showTopUp && (
+        <TopUpSheet products={products} onPurchase={(po)=>{onPurchase(po);setShowTopUp(false);toast("Stock topped up! Cost recorded.","success");}} onClose={()=>setShowTopUp(false)}/>
+      )}
+
+      {sheet && (
+        <Sheet title={editing?"Edit Product":"Add Product"} onClose={()=>setSheet(false)}>
+          <TextInput label="Item Code *" value={form.id||""} onChange={e=>setForm(f=>({...f,id:e.target.value.toUpperCase()}))} placeholder="e.g. SHOE-001"/>
+          <Field label="Product Name *">
+            <input
+              list="prod-name-list"
+              value={form.name||""}
+              onChange={e=>{
+                const val = e.target.value;
+                setForm(f=>{
+                  // If name matches an existing product, auto-fill category
+                  const match = products.find(p=>p.name.toLowerCase()===val.toLowerCase());
+                  if (match && !editing) {
+                    return {...f, name:val, cat:match.cat||f.cat,
+                      size:match.size||f.size, color:match.color||f.color,
+                      cost:String(match.cost)||f.cost, price:String(match.price)||f.price,
+                      supplier:match.supplier||f.supplier,
+                      // Auto-generate new item code based on existing pattern
+                      id: f.id || (match.id.replace(/\d+$/,"")+(Date.now()%1000))};
+                  }
+                  // Auto-generate ID from name if ID is empty
+                  if (!f.id && val.length >= 3) {
+                    const code = val.replace(/[^a-zA-Z0-9]/g,"").toUpperCase().slice(0,6)+"-"+String(Date.now()).slice(-3);
+                    return {...f, name:val, id:code};
+                  }
+                  return {...f, name:val};
+                });
+              }}
+              placeholder="Type name or pick existing..."
+            />
+            <datalist id="prod-name-list">
+              {products.map(p=><option key={p.id} value={p.name}/>)}
+            </datalist>
+          </Field>
+          <CategoryInput label="Category" value={form.cat||""} onChange={F("cat")} existing={existingCats}/>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{flex:1}}><TextInput label="Size" value={form.size||""} onChange={F("size")} placeholder="e.g. S/M/L"/></div>
+            <div style={{flex:1}}><TextInput label="Color" value={form.color||""} onChange={F("color")} placeholder="e.g. Black"/></div>
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{flex:1}}><TextInput label="Cost Price ($) *" type="number" value={form.cost||""} onChange={F("cost")} inputMode="decimal" step="0.01"/></div>
+            <div style={{flex:1}}><TextInput label="Sale Price ($) *"  type="number" value={form.price||""} onChange={F("price")} inputMode="decimal" step="0.01"/></div>
+          </div>
+          {form.cost && form.price && +form.price > 0 && (
+            <div style={{background:"var(--grn-bg)",borderRadius:12,padding:"9px 13px",marginBottom:14,fontSize:12,color:"var(--grn)",fontWeight:700}}>
+              Margin: {pct(+form.price-+form.cost, +form.price)}
+            </div>
+          )}
+          <div style={{display:"flex",gap:10}}>
+            <div style={{flex:1}}><TextInput label="Stock Qty"       type="number" value={form.stock} onChange={F("stock")} inputMode="numeric"/></div>
+            <div style={{flex:1}}><TextInput label="Low Stock Alert" type="number" value={form.min}   onChange={F("min")}   inputMode="numeric"/></div>
+          </div>
+          <TextInput label="Barcode (optional)" value={form.barcode||""} onChange={F("barcode")} placeholder="e.g. BC001"/>
+          <TextInput label="Supplier (optional)" value={form.supplier||form.sid||""} onChange={F("supplier")} placeholder="e.g. Fashion Hub, 0244123456, Kantamanto"/>
+          <Btn label={editing?"Save Changes":"Add Product"} onClick={save} block/>
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
+/* ── PURCHASES PAGE ── */
+function PurchasesPage({data, onPurchase, toast}) {
+  const {purchases, products, suppliers} = data;
+  const [sheet, setSheet]  = useState(false);
+  const [form, setForm]    = useState({date:today(), supplier:"", items:[{pid:"",qty:"1",cost:""}], payment:"Cash", note:""});
+
+  const F = k => e => setForm(f=>({...f,[k]:e.target.value}));
+  const setItem = (i,k,v) => setForm(f=>({...f,items:f.items.map((it,j)=>j===i?{...it,[k]:v}:it)}));
+  const autoFill = (i,pid) => {
+    setItem(i,"pid",pid);
+    const p = products.find(x=>x.id===pid);
+    if (p) setItem(i,"cost",String(p.cost));
+  };
+  const addItem  = () => setForm(f=>({...f,items:[...f.items,{pid:"",qty:"1",cost:""}]}));
+  const remItem  = i  => setForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}));
+  const totCost  = form.items.reduce((a,it)=>a+(+it.qty||0)*(+it.cost||0),0);
+
+  const submit = () => {
+    for (let it of form.items) {
+      if (!it.pid) { toast("Select a product for each row","error"); return; }
+      if (!(+it.qty > 0)) { toast("Enter a valid quantity","error"); return; }
+      if (it.cost === "" || it.cost === undefined) { toast("Enter cost price (enter 0 if free)","error"); return; }
+    }
+    const po = {
+      id:uid("PO"), date:form.date, supplier:form.supplier, payment:form.payment, note:form.note,
+      items:form.items.map(it=>({pid:it.pid, name:products.find(p=>p.id===it.pid)?.name||it.pid, qty:+it.qty, cost:+it.cost}))
+    };
+    onPurchase(po);
+    setSheet(false);
+    setForm({date:today(),supplier:"",items:[{pid:"",qty:"1",cost:""}],payment:"Cash",note:""});
+    toast("Purchase saved! Stock updated.","success");
+  };
+
+  const totSpend = purchases.reduce((a,p)=>a+p.items.reduce((b,i)=>b+i.qty*i.cost,0),0);
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontSize:18,fontWeight:800}}>Purchases</div>
+        <Btn label="+ Log Purchase" small color="amb" onClick={()=>{setForm({date:today(),supplier:"",items:[{pid:"",qty:"1",cost:""}],payment:"Cash",note:""});setSheet(true);}}/>
+      </div>
+      {purchases.length > 0 && (
+        <>
+          <div style={{background:"var(--amb-bg)",border:"1.5px solid var(--amb)",borderRadius:16,padding:14,marginBottom:10}}>
+            <div style={{fontSize:10,color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total Money Spent on Stock</div>
+            <div style={{fontSize:28,fontWeight:800,color:"var(--amb)",fontFamily:"var(--fm)"}}>{money(totSpend)}</div>
+            <div style={{fontSize:12,color:"var(--muted)",marginTop:3}}>{purchases.length} purchase{purchases.length!==1?"s":""} recorded</div>
+          </div>
+          <div style={{display:"flex",gap:10,marginBottom:14}}>
+            <KPI label="Avg per Order" value={money(totSpend/purchases.length)} accent="var(--prp)"/>
+            <KPI label="Items Bought"  value={String(purchases.reduce((a,p)=>a+p.items.reduce((b,i)=>b+i.qty,0),0))} accent="var(--blu)"/>
+          </div>
+        </>
+      )}
+      {purchases.length === 0 && (
+        <div style={{textAlign:"center",padding:"50px 0",color:"var(--muted)"}}>
+          No purchases yet.<br/><span style={{fontSize:12}}>Tap "Log Purchase" to record stock buys.</span>
+        </div>
+      )}
+      {[...purchases].reverse().map((p,i) => {
+        const sup  = null; // supplier stored as free text in p.supplier
+        const cost = p.items.reduce((a,i)=>a+i.qty*i.cost,0);
+        return (
+          <div key={p.id} style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:14,marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,gap:8}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:800,fontSize:15}}>{p.supplier||(data.suppliers&&data.suppliers.find(s=>s.id===p.sid)?.name)||"No supplier"}</div>
+                <div style={{fontSize:11,color:"var(--muted)",marginTop:1}}>{p.date} • {p.id}</div>
+              </div>
+              <span style={{fontWeight:800,color:"var(--amb)",fontFamily:"var(--fm)",fontSize:17,flexShrink:0}}>{money(cost)}</span>
+            </div>
+            {p.items.map((it,j)=>(
+              <div key={j} style={{fontSize:12,color:"var(--muted)",padding:"2px 0"}}>{it.name} ×{it.qty} @ {money(it.cost)}</div>
+            ))}
+          </div>
+        );
+      })}
+
+      {sheet && (
+        <Sheet title="Log Purchase 📦" onClose={()=>setSheet(false)}>
+          <TextInput   label="Date" type="date" value={form.date} onChange={F("date")}/>
+          <TextInput label="Supplier / Shop name (optional)" value={form.supplier||""} onChange={F("supplier")} placeholder="e.g. Fashion Hub, 0244123456, Kantamanto"/>
+          <SelectInput label="Payment" value={form.payment} onChange={F("payment")} options={PMTS}/>
+
+          <div style={{fontSize:11,color:"var(--muted)",fontWeight:700,marginBottom:10,textTransform:"uppercase",letterSpacing:0.8}}>Items Purchased</div>
+
+          {form.items.map((item,i) => (
+            <div key={i} style={{background:"var(--surf2)",borderRadius:12,padding:12,marginBottom:10}}>
+              <SelectInput label="Product" value={item.pid} onChange={e=>autoFill(i,e.target.value)}
+                options={[{v:"",l:products.length===0?"Add products in Stock tab first":"- Select product -"},...products.map(p=>({v:p.id,l:p.name}))]}/>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{flex:1}}><TextInput label="Qty" type="number" value={item.qty} onChange={e=>setItem(i,"qty",e.target.value)} inputMode="numeric" min="1"/></div>
+                <div style={{flex:1}}><TextInput label="Cost/unit ($)" type="number" value={item.cost} onChange={e=>setItem(i,"cost",e.target.value)} inputMode="decimal" step="0.01"/></div>
+              </div>
+              {form.items.length > 1 && <Btn label="Remove" small color="ghost" onClick={()=>remItem(i)} block/>}
+            </div>
+          ))}
+
+          <Btn label="+ Add Another Item" small color="ghost" onClick={addItem} block/>
+          <div style={{background:"var(--amb-bg)",border:"1.5px solid var(--amb)",borderRadius:12,
+            padding:"12px 14px",margin:"12px 0",fontWeight:700,color:"var(--amb)",fontFamily:"var(--fm)"}}>
+            Total Cost: {money(totCost)}
+          </div>
+          <TextArea label="Notes (optional)" value={form.note} onChange={F("note")} placeholder="e.g. Paid cash, 30-day credit..."/>
+          <Btn label="Log Purchase & Update Stock" color="amb" onClick={submit} block/>
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
+/* ── EXPENSES PAGE ── */
+function ExpensesPage({data, onExpense, toast}) {
+  const {expenses} = data;
+  const [showExp, setShowExp] = useState(false);
+
+  const existing = [...new Set(expenses.map(e=>e.cat).filter(Boolean))];
+  const allCats  = [...new Set([...EXP_LIST,...existing])];
+  const byC = allCats.map(cat=>({cat,total:expenses.filter(e=>e.cat===cat).reduce((a,e)=>a+e.amount,0)})).filter(c=>c.total>0);
+  const totExp = expenses.reduce((a,e)=>a+e.amount,0);
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontSize:18,fontWeight:800}}>Expenses</div>
+        <Btn label="+ Add" small color="red" onClick={()=>setShowExp(true)}/>
+      </div>
+      {byC.length > 0 && (
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+          {byC.map(c=>(
+            <div key={c.cat} style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:14,
+              padding:"11px 14px",borderLeft:"4px solid var(--amb)",flex:"1 0 130px"}}>
+              <div style={{fontSize:9,color:"var(--muted)",fontWeight:700,textTransform:"uppercase"}}>{c.cat}</div>
+              <div style={{fontSize:17,fontWeight:700,color:"var(--amb)",fontFamily:"var(--fm)",marginTop:3}}>{money(c.total)}</div>
+            </div>
+          ))}
+          <div style={{background:"var(--surf)",border:"1.5px solid var(--red)",borderRadius:14,
+            padding:"11px 14px",borderLeft:"4px solid var(--red)",flex:"1 0 130px"}}>
+            <div style={{fontSize:9,color:"var(--muted)",fontWeight:700,textTransform:"uppercase"}}>TOTAL</div>
+            <div style={{fontSize:17,fontWeight:700,color:"var(--red)",fontFamily:"var(--fm)",marginTop:3}}>{money(totExp)}</div>
+          </div>
+        </div>
+      )}
+      {expenses.length === 0 && (
+        <div style={{textAlign:"center",padding:"50px 0",color:"var(--muted)"}}>
+          No expenses yet.<br/><span style={{fontSize:12}}>Tap "+ Add" to record one.</span>
+        </div>
+      )}
+      {[...expenses].reverse().map((e,i)=>(
+        <div key={e.id} style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:14,marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:14}}>{e.desc||e.cat}</div>
+              <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{e.date} • <Tag label={e.cat} color="amb"/></div>
+            </div>
+            <span style={{fontWeight:800,color:"var(--red)",fontFamily:"var(--fm)",fontSize:17,flexShrink:0}}>{money(e.amount)}</span>
+          </div>
+        </div>
+      ))}
+      {showExp && <ExpSheet data={data} onExpense={e=>{onExpense(e);setShowExp(false);}} toast={toast} onClose={()=>setShowExp(false)}/>}
+    </div>
+  );
+}
+
+/* ── MORE PAGE ── */
+function MorePage({data, onUpdate, toast, onSignOut}) {
+  const [view, setView]     = useState(null);
+  const [sheet, setSheet]   = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm]     = useState({});
+  const F = k => e => setForm(f=>({...f,[k]:e.target.value}));
+
+  /* CUSTOMERS */
+  if (view==="customers") {
+    const {customers, sales} = data;
+    const enr = customers.map(c=>({...c, spent:sales.filter(s=>s.cid===c.id).reduce((a,s)=>a+sRev(s),0), visits:sales.filter(s=>s.cid===c.id).length}));
+    const saveC = () => {
+      if (!form.name?.trim()) { toast("Name required","error"); return; }
+      onUpdate("customers", editing ? customers.map(c=>c.id===editing?{...form}:c) : [{...form},...customers]);
+      setSheet(null); toast(editing?"Updated!":"Customer added!","success");
+    };
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+          <button onClick={()=>setView(null)} style={{background:"var(--surf2)",border:"none",color:"var(--muted)",borderRadius:10,padding:"8px 13px",fontSize:14,fontWeight:700}}>← Back</button>
+          <div style={{fontSize:18,fontWeight:800,flex:1}}>Customers</div>
+          <Btn label="+ Add" small onClick={()=>{setForm({id:uid("CUS"),name:"",phone:"",email:"",address:"",notes:""});setEditing(null);setSheet("c");}}/>
+        </div>
+        {enr.length===0 && <div style={{textAlign:"center",padding:"40px 0",color:"var(--muted)"}}>No customers yet.</div>}
+        {enr.map((c,i)=>(
+          <div key={c.id} style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:14,marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,gap:8}}>
+              <div><div style={{fontWeight:800,fontSize:15}}>{c.name}</div><div style={{fontSize:11,color:"var(--muted)",marginTop:1}}>{c.phone||"-"}</div></div>
+              <Tag label={c.spent>500?"VIP":c.spent>200?"Regular":"New"} color={c.spent>500?"grn":c.spent>200?"blu":"dim"}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{display:"flex",gap:14}}>
+                <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>SPENT</div><div style={{fontWeight:700,color:"var(--grn)",fontFamily:"var(--fm)"}}>{money(c.spent)}</div></div>
+                <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>VISITS</div><div style={{fontWeight:700}}>{c.visits}</div></div>
+              </div>
+              <Btn label="Edit" small color="ghost" onClick={()=>{setForm({...c});setEditing(c.id);setSheet("c");}}/>
+            </div>
+          </div>
+        ))}
+        {sheet==="c" && (
+          <Sheet title={editing?"Edit Customer":"Add Customer"} onClose={()=>setSheet(null)}>
+            <TextInput label="Full Name *" value={form.name||""} onChange={F("name")} placeholder="e.g. Akosua Mensah"/>
+            <TextInput label="Phone" value={form.phone||""} onChange={F("phone")} placeholder="+233..."/>
+            <TextInput label="Email" type="email" value={form.email||""} onChange={F("email")}/>
+            <TextInput label="Address" value={form.address||""} onChange={F("address")}/>
+            <TextArea  label="Notes" value={form.notes||""} onChange={F("notes")}/>
+            <Btn label={editing?"Save Changes":"Add Customer"} onClick={saveC} block/>
+          </Sheet>
+        )}
+      </div>
+    );
+  }
+
+  /* SUPPLIERS */
+  if (view==="suppliers") {
+    const {suppliers, purchases, products} = data;
+    const enr = suppliers.map(s=>({...s, spend:purchases.filter(p=>p.sid===s.id).reduce((a,p)=>a+p.items.reduce((b,i)=>b+i.qty*i.cost,0),0), orders:purchases.filter(p=>p.sid===s.id).length}));
+    const saveS = () => {
+      if (!form.name?.trim()) { toast("Name required","error"); return; }
+      onUpdate("suppliers", editing ? suppliers.map(s=>s.id===editing?{...form}:s) : [{...form},...suppliers]);
+      setSheet(null); toast(editing?"Updated!":"Supplier added!","success");
+    };
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+          <button onClick={()=>setView(null)} style={{background:"var(--surf2)",border:"none",color:"var(--muted)",borderRadius:10,padding:"8px 13px",fontSize:14,fontWeight:700}}>← Back</button>
+          <div style={{fontSize:18,fontWeight:800,flex:1}}>Suppliers</div>
+          <Btn label="+ Add" small onClick={()=>{setForm({id:uid("SUP"),name:"",contact:"",phone:"",email:"",address:"",notes:""});setEditing(null);setSheet("s");}}/>
+        </div>
+        {suppliers.length===0 && <div style={{textAlign:"center",padding:"40px 0",color:"var(--muted)"}}>No suppliers yet.</div>}
+        {enr.map((s,i)=>(
+          <div key={s.id} style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:14,marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,gap:8}}>
+              <div><div style={{fontWeight:800,fontSize:15}}>{s.name}</div><div style={{fontSize:11,color:"var(--muted)",marginTop:1}}>{s.contact||"-"} • {s.phone||"-"}</div></div>
+              <Btn label="Edit" small color="ghost" onClick={()=>{setForm({...s});setEditing(s.id);setSheet("s");}}/>
+            </div>
+            <div style={{display:"flex",gap:14}}>
+              <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>SPEND</div><div style={{fontWeight:700,color:"var(--amb)",fontFamily:"var(--fm)"}}>{money(s.spend)}</div></div>
+              <div><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>ORDERS</div><div style={{fontWeight:700}}>{s.orders}</div></div>
+            </div>
+          </div>
+        ))}
+        {sheet==="s" && (
+          <Sheet title={editing?"Edit Supplier":"Add Supplier"} onClose={()=>setSheet(null)}>
+            <TextInput label="Supplier Name *" value={form.name||""} onChange={F("name")} placeholder="e.g. Fashion Hub"/>
+            <TextInput label="Contact Person"  value={form.contact||""} onChange={F("contact")}/>
+            <TextInput label="Phone" value={form.phone||""} onChange={F("phone")} placeholder="+233..."/>
+            <TextInput label="Email" type="email" value={form.email||""} onChange={F("email")}/>
+            <TextInput label="Address" value={form.address||""} onChange={F("address")}/>
+            <TextArea  label="Notes (payment terms, etc.)" value={form.notes||""} onChange={F("notes")}/>
+            <Btn label={editing?"Save Changes":"Add Supplier"} onClick={saveS} block/>
+          </Sheet>
+        )}
+      </div>
+    );
+  }
+
+  /* REPORTS */
+  if (view==="reports") {
+    const {sales, expenses} = data;
+    const totRev  = sales.reduce((a,s)=>a+sRev(s),0);
+    const totCost = sales.reduce((a,s)=>a+sCost(s),0);
+    const grossP  = totRev - totCost;
+    const totExp  = expenses.reduce((a,e)=>a+e.amount,0);
+    const netP    = grossP - totExp;
+    const months  = Array.from({length:12},(_,i)=>{
+      const m = String(i+1).padStart(2,"0");
+      const mS = sales.filter(s=>s.date.slice(5,7)===m);
+      return {l:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][i], rev:mS.reduce((a,s)=>a+sRev(s),0), gp:mS.reduce((a,s)=>a+sProfit(s),0), exp:expenses.filter(e=>e.date.slice(5,7)===m).reduce((a,e)=>a+e.amount,0)};
+    });
+    const maxRev = Math.max(...months.map(m=>m.rev),1);
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+          <button onClick={()=>setView(null)} style={{background:"var(--surf2)",border:"none",color:"var(--muted)",borderRadius:10,padding:"8px 13px",fontSize:14,fontWeight:700}}>← Back</button>
+          <div style={{fontSize:18,fontWeight:800}}>Reports</div>
+        </div>
+        <div style={{display:"flex",gap:10,marginBottom:10}}>
+          <KPI label="Revenue"      value={money(totRev)} accent="var(--grn)"/>
+          <KPI label="Net Profit"   value={money(netP)}   accent={netP>=0?"var(--prp)":"var(--red)"}/>
+        </div>
+        <div style={{display:"flex",gap:10,marginBottom:16}}>
+          <KPI label="Gross Profit" value={money(grossP)} sub={pct(grossP,totRev)} accent="var(--blu)"/>
+          <KPI label="Expenses"     value={money(totExp)} accent="var(--amb)"/>
+        </div>
+        <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:18,padding:16,marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>Monthly Revenue</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:3,height:80}}>
+            {months.map((m,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                <div style={{width:"100%",background:m.rev>0?"var(--grn)":"var(--surf2)",height:`${Math.max((m.rev/maxRev)*100,3)}%`,borderRadius:"3px 3px 0 0"}}/>
+                <span style={{fontSize:8,color:"var(--muted)"}}>{m.l}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Download full year PDF */}
+        {months.some(m=>m.rev>0||m.exp>0) && (
+          <Btn label="📄 Download Full Year PDF" color="blu" onClick={()=>{
+            const activeMonths = months.filter(m=>m.rev>0||m.exp>0);
+            const w = window.open("","_blank");
+            if(!w) return;
+            w.document.write(`<!DOCTYPE html><html><head><title>ShopFlow Report ${new Date().getFullYear()}</title>
+            <style>body{font-family:Arial,sans-serif;padding:24px;font-size:13px;max-width:700px;margin:0 auto}
+            h2{color:#111}p{color:#555}table{width:100%;border-collapse:collapse;margin-bottom:20px}
+            th{background:#222;color:#fff;padding:8px 10px;text-align:left}
+            td{padding:8px 10px;border-bottom:1px solid #eee}
+            .pos{color:#007700;font-weight:bold}.neg{color:#cc0000;font-weight:bold}
+            .tot{background:#f5f5f5;font-weight:bold}@media print{button{display:none}}</style></head><body>
+            <h2>📊 ShopFlow Pro - Annual Report ${new Date().getFullYear()}</h2>
+            <p>Generated: ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</p>
+            <table><thead><tr><th>Month</th><th>Revenue</th><th>Gross Profit</th><th>Expenses</th><th>Net Profit</th><th>Margin</th></tr></thead>
+            <tbody>
+              ${activeMonths.map(m=>{const np=m.gp-m.exp;const mg=m.rev>0?((m.gp/m.rev)*100).toFixed(1)+"%" :"-";
+                return `<tr><td>${m.l}</td><td>${money(m.rev)}</td><td>${money(m.gp)}</td><td>${money(m.exp)}</td>
+                <td class="${np>=0?"pos":"neg"}">${money(np)}</td><td>${mg}</td></tr>`;}).join("")}
+              <tr class="tot"><td>TOTAL</td><td>${money(totRev)}</td><td>${money(grossP)}</td><td>${money(totExp)}</td>
+              <td class="${netP>=0?"pos":"neg"}">${money(netP)}</td><td>${totRev>0?((grossP/totRev)*100).toFixed(1)+"%":"-"}</td></tr>
+            </tbody></table>
+            <button onclick="window.print()" style="padding:10px 20px;background:#1a56db;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">🖨 Print / Save as PDF</button>
+            </body></html>`);
+            w.document.close();
+          }} block/>
+        )}
+
+        {months.filter(m=>m.rev>0||m.exp>0).map((m,i)=>{
+          const np=m.gp-m.exp;
+          const mg = m.rev>0?((m.gp/m.rev)*100).toFixed(1)+"%":"-";
+          return (
+            <div key={i} style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:14,marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontWeight:800,fontSize:15}}>{m.l}</div>
+                <Btn label="📄 PDF" small color="ghost" onClick={()=>{
+                  const w=window.open("","_blank"); if(!w)return;
+                  w.document.write(`<!DOCTYPE html><html><head><title>${m.l} Report</title>
+                  <style>body{font-family:Arial,sans-serif;padding:24px;max-width:500px;margin:0 auto;font-size:14px}
+                  h2{margin-bottom:4px}p{color:#555;margin:0 0 20px}
+                  .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee}
+                  .val{font-weight:bold;font-family:monospace}.pos{color:#007700}.neg{color:#cc0000}
+                  @media print{button{display:none}}</style></head><body>
+                  <h2>📊 ${m.l} Performance Report</h2>
+                  <p>ShopFlow Pro - Generated ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</p>
+                  <div class="row"><span>Revenue</span><span class="val pos">${money(m.rev)}</span></div>
+                  <div class="row"><span>Cost of Goods Sold</span><span class="val neg">${money(m.rev-m.gp)}</span></div>
+                  <div class="row"><span>Gross Profit</span><span class="val pos">${money(m.gp)}</span></div>
+                  <div class="row"><span>Gross Margin</span><span class="val">${mg}</span></div>
+                  <div class="row"><span>Expenses</span><span class="val neg">${money(m.exp)}</span></div>
+                  <div class="row" style="font-size:16px;font-weight:bold;padding-top:12px"><span>Net Profit</span>
+                  <span class="val ${np>=0?"pos":"neg"}">${money(np)}</span></div>
+                  <br/><button onclick="window.print()" style="padding:10px 20px;background:#1a56db;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">🖨 Print / Save PDF</button>
+                  </body></html>`); w.document.close();
+                }}/>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+                {[["REVENUE",m.rev,"var(--grn)"],["GROSS P",m.gp,"var(--blu)"],["EXPENSES",m.exp,"var(--amb)"],["NET P",np,np>=0?"var(--prp)":"var(--red)"],["MARGIN",mg,"var(--text)"]].map(([l,v,c])=>(
+                  <div key={l}><div style={{fontSize:9,color:"var(--muted)",fontWeight:700}}>{l}</div><div style={{fontWeight:700,color:c,fontFamily:"var(--fm)"}}>{typeof v==="string"?v:money(v)}</div></div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {!months.some(m=>m.rev>0) && <div style={{textAlign:"center",padding:"30px 0",color:"var(--muted)"}}>No data yet. Start logging sales!</div>}
+      </div>
+    );
+  }
+
+  /* SETTINGS */
+  if (view==="settings") {
+    const {users} = data;
+    const resetData = (keys, label) => {
+      if (!confirm(`Delete all ${label}? This cannot be undone.`)) return;
+      keys.forEach(k => localStorage.removeItem(k));
+      window.location.reload();
+    };
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+          <button onClick={()=>setView(null)} style={{background:"var(--surf2)",border:"none",color:"var(--muted)",borderRadius:10,padding:"8px 13px",fontSize:14,fontWeight:700}}>← Back</button>
+          <div style={{fontSize:18,fontWeight:800}}>Settings</div>
+        </div>
+        {/* Users */}
+        <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:16,marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{fontWeight:700,fontSize:15}}>👤 Users</div>
+            <Btn label="+ Add" small onClick={()=>{setForm({id:uid("USR"),name:"",pin:"",role:"Cashier",avatar:""});setEditing(null);setSheet("u");}}/>
+          </div>
+          {users.map((u,i)=>(
+            <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:i<users.length-1?"1px solid var(--brd)":"none"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:36,height:36,background:"var(--grn-bg)",border:"2px solid var(--grn)",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,color:"var(--grn)",fontSize:14}}>{u.avatar||u.name[0]}</div>
+                <div><div style={{fontWeight:700}}>{u.name}</div><div style={{fontSize:12,color:"var(--muted)"}}>{u.role} • PIN: {"•".repeat(u.pin.length)}</div></div>
+              </div>
+              <Btn label="Edit" small color="ghost" onClick={()=>{setForm({...u});setEditing(u.id);setSheet("u");}}/>
+            </div>
+          ))}
+        </div>
+        {/* Reset */}
+        <div style={{background:"var(--red-bg)",border:"1.5px solid var(--red)",borderRadius:16,padding:16,marginBottom:14}}>
+          <div style={{fontWeight:700,color:"var(--red)",marginBottom:6,fontSize:15}}>🗑 Reset Data</div>
+          <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>Permanently delete data. Cannot be undone!</div>
+          <div style={{display:"flex",flexDirection:"column",gap:9}}>
+            {[
+              [["sf_sales"],"sales","🧹 Clear Sales only"],
+              [["sf_expenses"],"expenses","🧹 Clear Expenses only"],
+              [["sf_purchases"],"purchases","🧹 Clear Purchases only"],
+              [["sf_products"],"products","🧹 Clear Products only"],
+              [["sf_products","sf_sales","sf_purchases","sf_expenses","sf_customers","sf_suppliers"],"EVERYTHING","💥 Full Reset - Start from Zero"],
+            ].map(([keys,label,btn])=>(
+              <button key={label} onClick={()=>resetData(keys,label)}
+                style={{background:label==="EVERYTHING"?"var(--red)":"var(--surf2)",border:`1.5px solid var(--red)`,
+                  color:label==="EVERYTHING"?"#fff":"var(--red)",borderRadius:11,padding:"12px 14px",
+                  fontWeight:700,fontSize:13,textAlign:"left",cursor:"pointer"}}>
+                {btn}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Firebase sync status */}
+        <div style={{background:SYNC_READY?"var(--grn-bg)":"var(--amb-bg)",border:`1.5px solid ${SYNC_READY?"var(--grn)":"var(--amb)"}`,borderRadius:16,padding:16,marginBottom:14}}>
+          <div style={{fontWeight:700,color:SYNC_READY?"var(--grn)":"var(--amb)",marginBottom:6,fontSize:15}}>
+            {SYNC_READY ? "✅ Live Sync Active" : "⚠ Offline Mode - Firebase Not Set Up"}
+          </div>
+          {SYNC_READY
+            ? <div style={{fontSize:12,color:"var(--muted)",lineHeight:1.8}}>
+                Your data syncs in real time across all devices.<br/>
+                Anyone with the Netlify link sees live updates instantly.<br/>
+                <b style={{color:"var(--grn)"}}>No export/import needed anymore.</b>
+              </div>
+            : <div style={{fontSize:12,color:"var(--muted)",lineHeight:1.9}}>
+                To enable real-time sync, follow the setup guide below.<br/>
+                Takes about 5 minutes. Free forever on Firebase's free plan.
+              </div>
+          }
+        </div>
+
+        {/* Firebase setup guide - only shown when not configured */}
+        {!SYNC_READY && (
+          <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:16,marginBottom:14}}>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:12}}>🔥 Firebase Setup Guide</div>
+            {[
+              ["1","Go to jsonbin.io","Open in your browser and click Sign Up Free"],
+              ["2","Create a free account","Use email or Google. Takes 30 seconds."],
+              ["3","Click API Keys in the top menu","You will see your Secret Key starting with $2b$..."],
+              ["4","Copy that Secret Key","Highlight it all and copy it"],
+              ["5","Open the ShopFlow index.html in Notepad","Right-click the file and choose Open with Notepad"],
+              ["6","Find PASTE_YOUR_KEY_HERE near the top","Press Ctrl+F and search for it"],
+              ["7","Replace it with your key","Delete PASTE_YOUR_KEY_HERE and paste your real key there"],
+              ["8","Save, rename to index.html, upload to Netlify","The app creates a cloud bin automatically on first save"],
+              ["9","Get your Bin ID from Settings","After first save, copy the Bin ID shown in Settings and paste it in the file too"],
+            ].map(([n,title,sub])=>(
+              <div key={n} style={{display:"flex",gap:12,marginBottom:12}}>
+                <div style={{width:24,height:24,background:"var(--grn)",color:"#000",borderRadius:"50%",
+                  display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:11,flexShrink:0}}>{n}</div>
+                <div>
+                  <div style={{fontWeight:700,fontSize:13}}>{title}</div>
+                  <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{sub}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{background:"var(--grn-bg)",borderRadius:12,padding:"10px 14px",fontSize:12,color:"var(--grn)",marginTop:4}}>
+              💡 Firebase free plan allows 50,000 reads and 20,000 writes per day - more than enough for a shop.
+            </div>
+          </div>
+        )}
+
+        {/* Backup export (still useful even with Firebase) */}
+        <div style={{background:"var(--surf2)",border:"1.5px solid var(--brd2)",borderRadius:16,padding:16,marginBottom:14}}>
+          <div style={{fontWeight:700,marginBottom:6}}>💾 Data Backup</div>
+          <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>Download a copy of all your data as a safety backup.</div>
+          <Btn label="📤 Export Backup (.json)" color="ghost" onClick={()=>{
+            const keys=["sf_products","sf_sales","sf_purchases","sf_expenses","sf_customers","sf_suppliers","sf_users"];
+            const out={};
+            keys.forEach(k=>{const v=localStorage.getItem(k);if(v)out[k]=v;});
+            const blob=new Blob([JSON.stringify(out)],{type:"application/json"});
+            const a=document.createElement("a");
+            a.href=URL.createObjectURL(blob);
+            a.download="shopflow-backup-"+new Date().toISOString().slice(0,10)+".json";
+            a.click();
+          }} block/>
+        </div>
+
+        {/* Netlify guide */}
+        <div style={{background:"var(--surf2)",border:"1.5px solid var(--brd2)",borderRadius:16,padding:16,marginBottom:14}}>
+          <div style={{fontWeight:700,marginBottom:8}}>🌐 Update your Netlify site</div>
+          <div style={{fontSize:13,lineHeight:2}}>1. Download the new HTML file<br/>2. Go to your Netlify dashboard<br/>3. Drag the file onto the deploy area<br/>4. Done - same URL, updated instantly</div>
+        </div>
+        <Btn label="Sign Out" color="ghost" onClick={onSignOut} block/>
+        {sheet==="u" && (
+          <Sheet title={editing?"Edit User":"Add User"} onClose={()=>setSheet(null)}>
+            <TextInput label="Full Name *" value={form.name||""} onChange={F("name")}/>
+            <TextInput label="PIN (4-6 digits) *" type="password" value={form.pin||""} onChange={e=>setForm(f=>({...f,pin:e.target.value.replace(/\D/g,"").slice(0,6)}))} inputMode="numeric" maxLength={6}/>
+            <SelectInput label="Role" value={form.role||"Cashier"} onChange={F("role")} options={ROLES}/>
+            <TextInput label="Avatar letter" value={form.avatar||""} onChange={e=>setForm(f=>({...f,avatar:e.target.value.slice(0,1).toUpperCase()}))} maxLength={1}/>
+            <Btn label="Save User" onClick={()=>{
+              if(!form.name?.trim()||!form.pin){toast("Name & PIN required","error");return;}
+              onUpdate("users",editing?users.map(u=>u.id===editing?form:u):[form,...users]);
+              setSheet(null);toast("Saved!","success");
+            }} block/>
+          </Sheet>
+        )}
+      </div>
+    );
+  }
+
+  /* MORE MENU */
+  const {products} = data;
+  const alerts = products.filter(p=>p.stock===0||(p.stock>0&&p.stock<=p.min)).length;
+  const menu = [
+    {icon:"👥",label:"Customers",  sub:`${data.customers.length} contacts`, key:"customers",  accent:"var(--blu)"},
+    {icon:"🏭",label:"Suppliers",  sub:`${data.suppliers.length} suppliers`, key:"suppliers",  accent:"var(--prp)"},
+    {icon:"📊",label:"Reports",    sub:"P&L, monthly breakdown",             key:"reports",    accent:"var(--grn)"},
+    {icon:"⚙️",label:"Settings",   sub:"Users, reset data & more",          key:"settings",   accent:"var(--muted)"},
+  ];
+  return (
+    <div>
+      <div style={{fontSize:18,fontWeight:800,marginBottom:16}}>More</div>
+      {menu.map(m=>(
+        <div key={m.key} onClick={()=>setView(m.key)}
+          style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:18,
+            padding:16,marginBottom:10,display:"flex",alignItems:"center",gap:14,cursor:"pointer"}}>
+          <div style={{width:48,height:48,background:m.accent+"22",borderRadius:14,
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{m.icon}</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:15}}>{m.label}</div>
+            <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{m.sub}</div>
+          </div>
+          {m.key==="settings" && alerts>0 && (
+            <div style={{background:"var(--red)",color:"#fff",borderRadius:10,fontSize:11,padding:"2px 8px",fontWeight:700}}>{alerts}</div>
+          )}
+          <span style={{color:"var(--muted)",fontSize:22}}>›</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── LOGIN ── */
+function Login({users, onLogin}) {
+  const [sel, setSel] = useState(null);
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState("");
+
+  const tryPin = d => {
+    const p = pin + d;
+    setPin(p); setErr("");
+    if (p.length >= sel.pin.length) {
+      if (p === sel.pin) onLogin(sel);
+      else { setErr("Wrong PIN - try again"); setPin(""); }
+    }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",
+      justifyContent:"center",flexDirection:"column",gap:28,padding:24}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:10,color:"var(--grn)",fontWeight:700,letterSpacing:4,marginBottom:8,textTransform:"uppercase"}}>SHOPFLOW PRO</div>
+        <div style={{fontSize:30,fontWeight:800,letterSpacing:-1}}>Retail Manager</div>
+        <div style={{color:"var(--muted)",fontSize:13,marginTop:5}}>Select your profile</div>
+      </div>
+      {!sel ? (
+        <div style={{display:"flex",flexDirection:"column",gap:12,width:"100%",maxWidth:340}}>
+          {users.map(u=>(
+            <div key={u.id} onClick={()=>setSel(u)}
+              style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:20,
+                padding:"18px 22px",display:"flex",alignItems:"center",gap:16,cursor:"pointer"}}>
+              <div style={{width:52,height:52,background:"var(--grn-bg)",border:"2px solid var(--grn)",
+                borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+                fontWeight:800,color:"var(--grn)",fontSize:22,flexShrink:0}}>{u.avatar||u.name[0]}</div>
+              <div><div style={{fontWeight:800,fontSize:16}}>{u.name}</div><div style={{fontSize:13,color:"var(--muted)",marginTop:2}}>{u.role}</div></div>
+              <span style={{marginLeft:"auto",color:"var(--muted)",fontSize:22}}>›</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{background:"var(--surf)",border:"1.5px solid var(--brd2)",borderRadius:24,padding:28,textAlign:"center",width:"100%",maxWidth:300}}>
+          <div style={{width:56,height:56,background:"var(--grn-bg)",border:"2px solid var(--grn)",
+            borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+            fontWeight:800,color:"var(--grn)",fontSize:24,margin:"0 auto 8px"}}>{sel.avatar||sel.name[0]}</div>
+          <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>{sel.name}</div>
+          <div style={{fontSize:12,color:"var(--muted)",marginBottom:18}}>Enter your PIN</div>
+          <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:18}}>
+            {Array.from({length:sel.pin.length},(_,i)=>(
+              <div key={i} style={{width:12,height:12,borderRadius:"50%",background:i<pin.length?"var(--grn)":"var(--brd2)",transition:"background .15s"}}/>
+            ))}
+          </div>
+          {err && <div style={{color:"var(--red)",fontSize:13,marginBottom:12,fontWeight:700}}>{err}</div>}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+            {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>(
+              <button key={i}
+                onClick={()=> d==="⌫" ? (setPin(""),setErr("")) : d!==""&&tryPin(String(d))}
+                disabled={d===""}
+                style={{padding:"16px",borderRadius:12,border:"1.5px solid var(--brd2)",
+                  background:d==="⌫"?"var(--red-bg)":d===""?"transparent":"var(--surf2)",
+                  color:d==="⌫"?"var(--red)":"var(--text)",fontWeight:700,fontSize:18,
+                  cursor:d===""?"default":"pointer",opacity:d===""?0:1,minHeight:54}}>
+                {d}
+              </button>
+            ))}
+          </div>
+          <button onClick={()=>{setSel(null);setPin("");setErr("");}}
+            style={{background:"none",border:"none",color:"var(--muted)",fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
+            ← Back
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
+   ROOT APP
+   ════════════════════════════════════════════ */
+function App() {
+  const [data, setData]   = useState(null);
+  const [user, setUser]   = useState(null);
+  const [tab, setTab]     = useState("dashboard");
+  const [toasts, setToasts] = useState([]);
+  const [showAlerts, setShowAlerts] = useState(false);
+
+  const toast = useCallback((msg, type="success") => {
+    const id = Date.now();
+    setToasts(t => [...t, {id,msg,type}]);
+  }, []);
+  const rmToast = useCallback(id => setToasts(t => t.filter(x=>x.id!==id)), []);
+
+  useEffect(() => {
+    async function loadData() {
+      // Start with local cache immediately (fast)
+      const local = {
+        products:  DB.get("sf_products",  []),
+        suppliers: DB.get("sf_suppliers", []),
+        customers: DB.get("sf_customers", []),
+        sales:     DB.get("sf_sales",     []),
+        purchases: DB.get("sf_purchases", []),
+        expenses:  DB.get("sf_expenses",  []),
+        users:     DB.get("sf_users",     DEFAULT_USERS),
+      };
+      setData(local);
+
+      // Then fetch from cloud (may have newer data from other devices)
+      if (SYNC_READY) {
+        const cloud = await cloudRead();
+        if (cloud) {
+          // Use cloud data if it's newer than local
+          const merged = {
+            products:  cloud.products  || local.products,
+            suppliers: cloud.suppliers || local.suppliers,
+            customers: cloud.customers || local.customers,
+            sales:     cloud.sales     || local.sales,
+            purchases: cloud.purchases || local.purchases,
+            expenses:  cloud.expenses  || local.expenses,
+            users:     cloud.users     || local.users,
+          };
+          // Cache cloud data locally too
+          Object.keys(merged).forEach(k => DB.set("sf_"+k, merged[k]));
+          setData(merged);
+        }
+      }
+    }
+    loadData();
+
+    // Poll cloud every 20 seconds for updates from other devices
+    let pollInterval = null;
+    if (SYNC_READY) {
+      pollInterval = setInterval(async () => {
+        const cloud = await cloudRead();
+        if (cloud) {
+          setData(d => {
+            if (!d) return d;
+            // Only update if cloud data is newer
+            if (cloud._updated && d._updated && cloud._updated <= d._updated) return d;
+            const merged = {
+              products:  cloud.products  || d.products,
+              suppliers: cloud.suppliers || d.suppliers,
+              customers: cloud.customers || d.customers,
+              sales:     cloud.sales     || d.sales,
+              purchases: cloud.purchases || d.purchases,
+              expenses:  cloud.expenses  || d.expenses,
+              users:     cloud.users     || d.users,
+              _updated:  cloud._updated,
+            };
+            Object.keys(merged).forEach(k => { if(k!=='_updated') DB.set("sf_"+k, merged[k]); });
+            return merged;
+          });
+        }
+      }, 20000);
+    }
+    return () => { if (pollInterval) clearInterval(pollInterval); };
+  }, []);
+
+  const upd = useCallback((key, val) => {
+    setData(d => {
+      const updated = {...d, [key]:val, _updated: Date.now()};
+      syncWrite(updated);
+      return updated;
+    });
+  }, []);
+
+  const onSale = useCallback(sale => {
+    setData(d => {
+      const products = d.products.map(p => {
+        const si = sale.items.find(i=>i.pid===p.id);
+        return si ? {...p, stock:Math.max(0,p.stock-si.qty)} : p;
+      });
+      const sales = [sale, ...d.sales];
+      const updated = {...d, products, sales, _updated: Date.now()};
+      syncWrite(updated);
+      return updated;
+    });
+  }, []);
+
+  const onPurchase = useCallback(po => {
+    setData(d => {
+      const products = d.products.map(p => {
+        const pi = po.items.find(i=>i.pid===p.id);
+        return pi ? {...p, stock:p.stock+pi.qty, cost:pi.cost} : p;
+      });
+      const purchases = [po, ...d.purchases];
+      const updated = {...d, products, purchases, _updated: Date.now()};
+      syncWrite(updated);
+      return updated;
+    });
+  }, []);
+
+  const onExpense = useCallback(exp => {
+    setData(d => {
+      const expenses = [exp, ...d.expenses];
+      const updated = {...d, expenses, _updated: Date.now()};
+      syncWrite(updated);
+      return updated;
+    });
+  }, []);
+
+  const onEditSale = useCallback(updated => {
+    setData(d => {
+      const sales = d.sales.map(s => s.id===updated.id ? updated : s);
+      const next = {...d, sales, _updated: Date.now()};
+      syncWrite(next);
+      return next;
+    });
+  }, []);
+
+  const onDeleteSale = useCallback(id => {
+    setData(d => {
+      const sales = d.sales.filter(s => s.id!==id);
+      const next = {...d, sales, _updated: Date.now()};
+      syncWrite(next);
+      return next;
+    });
+  }, []);
+
+  if (!data) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",
+      height:"100vh",flexDirection:"column",gap:16,padding:24,background:"var(--bg)"}}>
+      <div style={{fontSize:10,color:"var(--grn)",fontWeight:700,letterSpacing:4,textTransform:"uppercase"}}>SHOPFLOW PRO</div>
+      <div style={{width:44,height:44,border:"3px solid var(--brd2)",borderTop:"3px solid var(--grn)",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
+      <div style={{color:"var(--muted)",fontSize:14,fontWeight:600}}>{SYNC_READY ? "Loading cloud data..." : "Loading..."}</div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  if (!user) return <Login users={data.users} onLogin={setUser}/>;
+
+  const alerts = data.products.filter(p=>p.stock===0||(p.stock>0&&p.stock<=p.min)).length;
+
+  const TABS = [
+    {key:"dashboard", icon:"⌂",  label:"Home"},
+    {key:"sales",     icon:"💰", label:"Sales"},
+    {key:"stock",     icon:"🛒", label:"Stock"},
+    {key:"expenses",  icon:"💸", label:"Spend"},
+    {key:"more",      icon:"⋯",  label:"More"},
+  ];
+
+  return (
+    <>
+      {/* STICKY HEADER */}
+      <div className="hdr">
+        <div>
+          <div style={{fontSize:8,color:"var(--grn)",fontWeight:700,letterSpacing:3,textTransform:"uppercase"}}>SHOPFLOW PRO</div>
+          <div style={{fontSize:16,fontWeight:800}}>{TABS.find(t=>t.key===tab)?.label||"Dashboard"}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {/* Live sync dot */}
+          <div title={SYNC_READY?"Live sync active":"Offline - Firebase not configured"}
+            style={{width:8,height:8,borderRadius:"50%",background:SYNC_READY?"var(--grn)":"var(--amb)",
+              boxShadow:SYNC_READY?"0 0 6px var(--grn)":"none",flexShrink:0}}/>
+          {alerts>0 && (
+            <div onClick={()=>setShowAlerts(true)}
+              style={{background:"var(--red-bg)",border:"1px solid var(--red)",borderRadius:20,
+                padding:"4px 11px",fontSize:11,color:"var(--red)",fontWeight:700,cursor:"pointer"}}>
+              ⚠ {alerts}
+            </div>
+          )}
+          <div style={{width:32,height:32,background:"var(--grn-bg)",border:"1.5px solid var(--grn)",
+            borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+            fontWeight:800,color:"var(--grn)",fontSize:12}}>
+            {user.avatar||user.name[0]}
+          </div>
+        </div>
+      </div>
+
+      {/* PAGE CONTENT - scrolls naturally */}
+      <div className="page">
+        {tab==="dashboard" && <Dashboard  data={data} onSale={onSale} onExpense={onExpense} toast={toast} showAlerts={showAlerts} setShowAlerts={setShowAlerts}/>}
+        {tab==="sales"     && <SalesPage  data={data} onSale={onSale} onEditSale={onEditSale} onDeleteSale={onDeleteSale} toast={toast}/>}
+        {tab==="stock"     && <StockPage  data={data} onUpdate={upd} onPurchase={onPurchase} toast={toast}/>}
+        {tab==="expenses"  && <ExpensesPage  data={data} onExpense={onExpense}   toast={toast}/>}
+        {tab==="more"      && <MorePage      data={data} onUpdate={upd} toast={toast} onSignOut={()=>setUser(null)}/>}
+      </div>
+
+      {/* FIXED BOTTOM NAV */}
+      <div className="nav">
+        {TABS.map(t => {
+          const active = tab === t.key;
+          return (
+            <button key={t.key} onClick={()=>setTab(t.key)}
+              style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",
+                justifyContent:"center",gap:3,background:"none",border:"none",
+                color:active?"var(--grn)":"var(--muted)",cursor:"pointer",position:"relative",
+                padding:"6px 2px 4px"}}>
+              {t.key==="stock" && alerts>0 && (
+                <div style={{position:"absolute",top:4,right:"calc(50% - 16px)",background:"var(--red)",
+                  color:"#fff",borderRadius:"50%",width:15,height:15,display:"flex",
+                  alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800}}>{alerts}</div>
+              )}
+              <span style={{fontSize:t.key==="dashboard"?20:18,lineHeight:1}}>{t.icon}</span>
+              <span style={{fontSize:9,fontWeight:active?700:500,whiteSpace:"nowrap"}}>{t.label}</span>
+              {active && <div style={{position:"absolute",bottom:0,left:"50%",transform:"translateX(-50%)",
+                width:24,height:2.5,background:"var(--grn)",borderRadius:2}}/>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* TOASTS */}
+      <div style={{position:"fixed",top:60,left:"50%",transform:"translateX(-50%)",
+        display:"flex",flexDirection:"column",gap:6,zIndex:9999,
+        width:"calc(100% - 32px)",maxWidth:360,pointerEvents:"none"}}>
+        {toasts.map(t=><Toast key={t.id} msg={t.msg} type={t.type} onDone={()=>rmToast(t.id)}/>)}
+      </div>
+
+      {/* STOCK ALERT SHEET - available from any tab via header button */}
+      {showAlerts && <StockAlertSheet products={data.products} onClose={()=>setShowAlerts(false)}/>}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
 </html>

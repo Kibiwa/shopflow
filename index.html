@@ -135,65 +135,107 @@ const {useState, useEffect, useCallback, useRef} = React;
    ══════════════════════════════════════════════════════ */
 
 const JSONBIN_KEY = "$2b$10$vuSAbRA2IhQQU51dlVp8JuPdXHaDtjqWv5st9rkbTiEVNNeIYnkii";
-// After you paste your key above, also paste your Bin ID below
-// (A bin is created automatically the first time the app saves data -
-//  the bin ID will appear in Settings after the first save)
-const JSONBIN_BIN_ID = "69a08a8dd0ea881f40dc7764";
+const HAS_KEY = !JSONBIN_KEY.startsWith("PASTE");
 
-const SYNC_READY = !JSONBIN_KEY.startsWith("PASTE") && !JSONBIN_BIN_ID.startsWith("PASTE");
-const SETUP_KEY_ONLY = !JSONBIN_KEY.startsWith("PASTE") && JSONBIN_BIN_ID.startsWith("PASTE");
-
-/* ── Local storage (always used as cache) ── */
+/* ── Local storage cache ── */
 const DB = {
   get(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
-/* ── JSONBin API ── */
-const BIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`;
-const BIN_HEADERS = {
+/* ── Bin ID: stored in localStorage so it survives file updates ── */
+let _binId = localStorage.getItem("sf_bin_id") || "69a094e043b1c97be9a12778";
+localStorage.setItem("sf_bin_id", _binId);
+
+let SYNC_READY = false;
+let SYNC_ERROR = null;
+const SETUP_KEY_ONLY = false;
+
+const getBinUrl = () => "https://api.jsonbin.io/v3/b/" + _binId;
+const BIN_HEADERS_FN = () => ({
   "Content-Type": "application/json",
   "X-Master-Key": JSONBIN_KEY,
   "X-Bin-Versioning": "false",
-};
+});
+
+/* ── Test connection and set SYNC_READY ── */
+async function initSync() {
+  if (!HAS_KEY) { SYNC_ERROR = "No API key"; return; }
+  try {
+    const r = await fetch(getBinUrl(), { headers: {"X-Master-Key": JSONBIN_KEY} });
+    if (r.status === 200) {
+      SYNC_READY = true; SYNC_ERROR = null;
+      console.log("Sync connected to bin:", _binId);
+      return;
+    }
+    if (r.status === 401) {
+      SYNC_ERROR = "Invalid API key"; return;
+    }
+    if (r.status === 404) {
+      // Bin doesn't exist - create a new one
+      console.log("Bin not found - creating new bin...");
+      await createBin({products:[],sales:[],purchases:[],expenses:[],customers:[],suppliers:[],users:[],_updated:Date.now()});
+      return;
+    }
+    SYNC_ERROR = "HTTP " + r.status;
+  } catch(e) {
+    SYNC_ERROR = "Network error";
+    console.warn("Sync init failed:", e);
+  }
+}
 
 async function cloudRead() {
-  if (!SYNC_READY) return null;
+  if (!HAS_KEY || !_binId) return null;
   try {
-    const r = await fetch(BIN_URL, { headers: {"X-Master-Key": JSONBIN_KEY} });
+    const r = await fetch(getBinUrl(), { headers: {"X-Master-Key": JSONBIN_KEY} });
     if (!r.ok) return null;
     const j = await r.json();
     return j.record || null;
-  } catch(e) { console.warn("Cloud read failed:", e); return null; }
+  } catch(e) { return null; }
 }
 
 async function cloudWrite(data) {
   if (!SYNC_READY) return false;
   try {
-    const r = await fetch(BIN_URL, {
+    const r = await fetch(getBinUrl(), {
       method: "PUT",
-      headers: BIN_HEADERS,
+      headers: BIN_HEADERS_FN(),
       body: JSON.stringify(data),
     });
     return r.ok;
-  } catch(e) { console.warn("Cloud write failed:", e); return false; }
+  } catch(e) { return false; }
 }
 
-async function cloudCreate(data) {
-  if (JSONBIN_KEY.startsWith("PASTE")) return null;
+async function createBin(data) {
+  if (!HAS_KEY) return null;
   try {
     const r = await fetch("https://api.jsonbin.io/v3/b", {
       method: "POST",
-      headers: { ...BIN_HEADERS, "X-Bin-Name": "ShopFlow-Data", "X-Bin-Private": "false" },
+      headers: { ...BIN_HEADERS_FN(), "X-Bin-Name": "ShopFlow-Data" },
       body: JSON.stringify(data),
     });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const txt = await r.text().catch(()=>"");
+      SYNC_ERROR = "Could not create bin (" + r.status + "): " + txt.slice(0,80);
+      console.warn(SYNC_ERROR);
+      return null;
+    }
     const j = await r.json();
-    return j.metadata?.id || null;
-  } catch(e) { console.warn("Cloud create failed:", e); return null; }
+    const newId = j.metadata && j.metadata.id;
+    if (newId) {
+      _binId = newId;
+      localStorage.setItem("sf_bin_id", newId);
+      SYNC_READY = true; SYNC_ERROR = null;
+      console.log("New bin created:", newId);
+    }
+    return newId;
+  } catch(e) {
+    SYNC_ERROR = "Network error creating bin";
+    return null;
+  }
 }
 
-/* ── Build full data snapshot for cloud ── */
+/* ── Build snapshot ── */
 function buildSnapshot(data) {
   return {
     products:  data.products  || [],
@@ -207,15 +249,18 @@ function buildSnapshot(data) {
   };
 }
 
-/* ── Save to cloud + local cache ── */
+/* ── Save to cloud + local ── */
 async function syncWrite(data) {
   const snap = buildSnapshot(data);
-  // Always save locally first (instant)
   Object.keys(snap).forEach(k => { if(k !== "_updated") DB.set("sf_"+k, snap[k]); });
-  // Then push to cloud
-  if (SYNC_READY) {
-    const ok = await cloudWrite(snap);
-    if (!ok) console.warn("Cloud write failed - data saved locally");
+  if (HAS_KEY) {
+    if (!SYNC_READY) {
+      // Try to init first, then write
+      await initSync();
+    }
+    if (SYNC_READY) {
+      await cloudWrite(snap);
+    }
   }
 }
 
@@ -1648,22 +1693,33 @@ function MorePage({data, onUpdate, toast, onSignOut}) {
             ))}
           </div>
         </div>
-        {/* Firebase sync status */}
-        <div style={{background:SYNC_READY?"var(--grn-bg)":"var(--amb-bg)",border:`1.5px solid ${SYNC_READY?"var(--grn)":"var(--amb)"}`,borderRadius:16,padding:16,marginBottom:14}}>
-          <div style={{fontWeight:700,color:SYNC_READY?"var(--grn)":"var(--amb)",marginBottom:6,fontSize:15}}>
-            {SYNC_READY ? "✅ Live Sync Active" : "⚠ Offline Mode - Firebase Not Set Up"}
+        {/* Sync status card */}
+        <div style={{background:SYNC_READY?"var(--grn-bg)":SYNC_ERROR?"var(--red-bg)":"var(--amb-bg)",border:`1.5px solid ${SYNC_READY?"var(--grn)":SYNC_ERROR?"var(--red)":"var(--amb)"}`,borderRadius:16,padding:16,marginBottom:14}}>
+          <div style={{fontWeight:700,color:SYNC_READY?"var(--grn)":SYNC_ERROR?"var(--red)":"var(--amb)",marginBottom:6,fontSize:15}}>
+            {SYNC_READY ? "✅ Live Sync Active" : SYNC_ERROR ? "❌ Sync Error" : "⏳ Connecting..."}
           </div>
-          {SYNC_READY
-            ? <div style={{fontSize:12,color:"var(--muted)",lineHeight:1.8}}>
-                Your data syncs in real time across all devices.<br/>
-                Anyone with the Netlify link sees live updates instantly.<br/>
-                <b style={{color:"var(--grn)"}}>No export/import needed anymore.</b>
+          {SYNC_READY && (
+            <div style={{fontSize:12,color:"var(--muted)",lineHeight:1.8}}>
+              All devices see the same data.<br/>
+              Syncing every 20 seconds automatically.<br/>
+              <b style={{color:"var(--grn)"}}>Bin ID: {_binId}</b>
+            </div>
+          )}
+          {SYNC_ERROR && (
+            <div style={{fontSize:12,lineHeight:1.8}}>
+              <div style={{color:"var(--red)",fontWeight:700,marginBottom:6}}>{SYNC_ERROR}</div>
+              <div style={{color:"var(--muted)"}}>
+                Common fixes:<br/>
+                1. Check your JSONBin API key is correct (starts with $2b$...)<br/>
+                2. Make sure you are connected to the internet<br/>
+                3. Go to jsonbin.io and check your account is active<br/>
+                4. Try refreshing the page
               </div>
-            : <div style={{fontSize:12,color:"var(--muted)",lineHeight:1.9}}>
-                To enable real-time sync, follow the setup guide below.<br/>
-                Takes about 5 minutes. Free forever on Firebase's free plan.
-              </div>
-          }
+            </div>
+          )}
+          {!SYNC_READY && !SYNC_ERROR && (
+            <div style={{fontSize:12,color:"var(--muted)"}}>Connecting to cloud... please wait a moment then refresh.</div>
+          )}
         </div>
 
         {/* Firebase setup guide - only shown when not configured */}
@@ -1849,6 +1905,7 @@ function App() {
   const [tab, setTab]     = useState("dashboard");
   const [toasts, setToasts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(HAS_KEY ? "connecting" : "none");
 
   const toast = useCallback((msg, type="success") => {
     const id = Date.now();
@@ -1858,7 +1915,7 @@ function App() {
 
   useEffect(() => {
     async function loadData() {
-      // Start with local cache immediately (fast)
+      // Load from local cache immediately
       const local = {
         products:  DB.get("sf_products",  []),
         suppliers: DB.get("sf_suppliers", []),
@@ -1870,55 +1927,56 @@ function App() {
       };
       setData(local);
 
-      // Then fetch from cloud (may have newer data from other devices)
-      if (SYNC_READY) {
-        const cloud = await cloudRead();
-        if (cloud) {
-          // Use cloud data if it's newer than local
-          const merged = {
-            products:  cloud.products  || local.products,
-            suppliers: cloud.suppliers || local.suppliers,
-            customers: cloud.customers || local.customers,
-            sales:     cloud.sales     || local.sales,
-            purchases: cloud.purchases || local.purchases,
-            expenses:  cloud.expenses  || local.expenses,
-            users:     cloud.users     || local.users,
-          };
-          // Cache cloud data locally too
-          Object.keys(merged).forEach(k => DB.set("sf_"+k, merged[k]));
-          setData(merged);
+      // Init sync connection
+      if (HAS_KEY) {
+        await initSync();
+        // Force re-render to update sync dot color
+        setSyncStatus(SYNC_READY ? "ok" : (SYNC_ERROR || "error"));
+
+        if (SYNC_READY) {
+          const cloud = await cloudRead();
+          if (cloud) {
+            const merged = {
+              products:  cloud.products  || local.products,
+              suppliers: cloud.suppliers || local.suppliers,
+              customers: cloud.customers || local.customers,
+              sales:     cloud.sales     || local.sales,
+              purchases: cloud.purchases || local.purchases,
+              expenses:  cloud.expenses  || local.expenses,
+              users:     cloud.users     || local.users,
+            };
+            Object.keys(merged).forEach(k => DB.set("sf_"+k, merged[k]));
+            setData(merged);
+          }
         }
       }
     }
     loadData();
 
-    // Poll cloud every 20 seconds for updates from other devices
-    let pollInterval = null;
-    if (SYNC_READY) {
-      pollInterval = setInterval(async () => {
-        const cloud = await cloudRead();
-        if (cloud) {
-          setData(d => {
-            if (!d) return d;
-            // Only update if cloud data is newer
-            if (cloud._updated && d._updated && cloud._updated <= d._updated) return d;
-            const merged = {
-              products:  cloud.products  || d.products,
-              suppliers: cloud.suppliers || d.suppliers,
-              customers: cloud.customers || d.customers,
-              sales:     cloud.sales     || d.sales,
-              purchases: cloud.purchases || d.purchases,
-              expenses:  cloud.expenses  || d.expenses,
-              users:     cloud.users     || d.users,
-              _updated:  cloud._updated,
-            };
-            Object.keys(merged).forEach(k => { if(k!=='_updated') DB.set("sf_"+k, merged[k]); });
-            return merged;
-          });
-        }
-      }, 20000);
-    }
-    return () => { if (pollInterval) clearInterval(pollInterval); };
+    // Poll every 20 seconds
+    const pollInterval = setInterval(async () => {
+      if (!SYNC_READY) { await initSync(); setSyncStatus(SYNC_READY ? "ok" : "error"); return; }
+      const cloud = await cloudRead();
+      if (cloud) {
+        setData(d => {
+          if (!d) return d;
+          if (cloud._updated && d._updated && cloud._updated <= d._updated) return d;
+          const merged = {
+            products:  cloud.products  || d.products,
+            suppliers: cloud.suppliers || d.suppliers,
+            customers: cloud.customers || d.customers,
+            sales:     cloud.sales     || d.sales,
+            purchases: cloud.purchases || d.purchases,
+            expenses:  cloud.expenses  || d.expenses,
+            users:     cloud.users     || d.users,
+            _updated:  cloud._updated,
+          };
+          Object.keys(merged).forEach(k => { if(k!=='_updated') DB.set("sf_"+k, merged[k]); });
+          return merged;
+        });
+      }
+    }, 20000);
+    return () => clearInterval(pollInterval);
   }, []);
 
   const upd = useCallback((key, val) => {
@@ -2013,10 +2071,12 @@ function App() {
           <div style={{fontSize:16,fontWeight:800}}>{TABS.find(t=>t.key===tab)?.label||"Dashboard"}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          {/* Live sync dot */}
-          <div title={SYNC_READY?"Live sync active":"Offline - Firebase not configured"}
-            style={{width:8,height:8,borderRadius:"50%",background:SYNC_READY?"var(--grn)":"var(--amb)",
-              boxShadow:SYNC_READY?"0 0 6px var(--grn)":"none",flexShrink:0}}/>
+          {/* Live sync dot: green=synced, amber=connecting, red=error */}
+          <div
+            title={syncStatus==="ok"?"✅ Live sync active - all devices see same data":syncStatus==="connecting"?"Connecting to cloud...":"⚠ Sync error: "+SYNC_ERROR}
+            style={{width:10,height:10,borderRadius:"50%",
+              background:syncStatus==="ok"?"var(--grn)":syncStatus==="connecting"?"var(--amb)":"var(--red)",
+              boxShadow:syncStatus==="ok"?"0 0 8px var(--grn)":"none",flexShrink:0,cursor:"help"}}/>
           {alerts>0 && (
             <div onClick={()=>setShowAlerts(true)}
               style={{background:"var(--red-bg)",border:"1px solid var(--red)",borderRadius:20,

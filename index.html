@@ -1436,7 +1436,7 @@ function ExpensesPage({data, onExpense, toast}) {
 }
 
 /* ── MORE PAGE ── */
-function MorePage({data, onUpdate, toast, onSignOut}) {
+function MorePage({data, onUpdate, toast, onSignOut, syncStatus, binId}) {
   const [view, setView]     = useState(null);
   const [sheet, setSheet]   = useState(null);
   const [editing, setEditing] = useState(null);
@@ -1693,100 +1693,36 @@ function MorePage({data, onUpdate, toast, onSignOut}) {
             ))}
           </div>
         </div>
-        {/* Sync status card */}
-        <div style={{background:SYNC_READY?"var(--grn-bg)":SYNC_ERROR?"var(--red-bg)":"var(--amb-bg)",border:`1.5px solid ${SYNC_READY?"var(--grn)":SYNC_ERROR?"var(--red)":"var(--amb)"}`,borderRadius:16,padding:16,marginBottom:14}}>
-          <div style={{fontWeight:700,color:SYNC_READY?"var(--grn)":SYNC_ERROR?"var(--red)":"var(--amb)",marginBottom:6,fontSize:15}}>
-            {SYNC_READY ? "✅ Live Sync Active" : SYNC_ERROR ? "❌ Sync Error" : "⏳ Connecting..."}
-          </div>
-          {SYNC_READY && (
-            <div style={{fontSize:12,color:"var(--muted)",lineHeight:1.8}}>
-              All devices see the same data.<br/>
-              Syncing every 20 seconds automatically.<br/>
-              <b style={{color:"var(--grn)"}}>Bin ID: {_binId}</b>
-            </div>
-          )}
-          {SYNC_ERROR && (
-            <div style={{fontSize:12,lineHeight:1.8}}>
-              <div style={{color:"var(--red)",fontWeight:700,marginBottom:6}}>{SYNC_ERROR}</div>
-              <div style={{color:"var(--muted)"}}>
-                Common fixes:<br/>
-                1. Check your JSONBin API key is correct (starts with $2b$...)<br/>
-                2. Make sure you are connected to the internet<br/>
-                3. Go to jsonbin.io and check your account is active<br/>
-                4. Try refreshing the page
+        {/* Sync status card - uses syncStatus PROP so it re-renders correctly */}
+        {(()=>{
+          const isOk = syncStatus==="ok";
+          const isConn = syncStatus==="connecting";
+          const borderC = isOk?"var(--grn)":isConn?"var(--amb)":"var(--red)";
+          const bgC = isOk?"var(--grn-bg)":isConn?"var(--amb-bg)":"var(--red-bg)";
+          const textC = isOk?"var(--grn)":isConn?"var(--amb)":"var(--red)";
+          return (
+            <div style={{background:bgC,border:`1.5px solid ${borderC}`,borderRadius:16,padding:16,marginBottom:14}}>
+              <div style={{fontWeight:700,color:textC,marginBottom:6,fontSize:15}}>
+                {isOk?"✅ Live Sync Active":isConn?"⏳ Connecting to cloud...":"❌ Sync Error"}
               </div>
-            </div>
-          )}
-          {!SYNC_READY && !SYNC_ERROR && (
-            <div style={{fontSize:12,color:"var(--muted)"}}>Connecting to cloud... please wait a moment then refresh.</div>
-          )}
-        </div>
-
-        {/* Firebase setup guide - only shown when not configured */}
-        {!SYNC_READY && (
-          <div style={{background:"var(--surf)",border:"1.5px solid var(--brd)",borderRadius:16,padding:16,marginBottom:14}}>
-            <div style={{fontWeight:700,fontSize:15,marginBottom:12}}>🔥 Firebase Setup Guide</div>
-            {[
-              ["1","Go to jsonbin.io","Open in your browser and click Sign Up Free"],
-              ["2","Create a free account","Use email or Google. Takes 30 seconds."],
-              ["3","Click API Keys in the top menu","You will see your Secret Key starting with $2b$..."],
-              ["4","Copy that Secret Key","Highlight it all and copy it"],
-              ["5","Open the ShopFlow index.html in Notepad","Right-click the file and choose Open with Notepad"],
-              ["6","Find PASTE_YOUR_KEY_HERE near the top","Press Ctrl+F and search for it"],
-              ["7","Replace it with your key","Delete PASTE_YOUR_KEY_HERE and paste your real key there"],
-              ["8","Save, rename to index.html, upload to Netlify","The app creates a cloud bin automatically on first save"],
-              ["9","Get your Bin ID from Settings","After first save, copy the Bin ID shown in Settings and paste it in the file too"],
-            ].map(([n,title,sub])=>(
-              <div key={n} style={{display:"flex",gap:12,marginBottom:12}}>
-                <div style={{width:24,height:24,background:"var(--grn)",color:"#000",borderRadius:"50%",
-                  display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:11,flexShrink:0}}>{n}</div>
-                <div>
-                  <div style={{fontWeight:700,fontSize:13}}>{title}</div>
-                  <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{sub}</div>
+              {isOk&&<div style={{fontSize:12,color:"var(--muted)",lineHeight:1.9}}>
+                All devices see the same data automatically.<br/>
+                Syncing every 20 seconds.<br/>
+                <b style={{color:"var(--grn)",fontFamily:"var(--fm)",fontSize:11}}>Bin ID: {binId}</b>
+              </div>}
+              {isConn&&<div style={{fontSize:12,color:"var(--muted)"}}>Testing cloud connection, please wait...</div>}
+              {!isOk&&!isConn&&<div style={{fontSize:12,lineHeight:1.8}}>
+                <div style={{color:"var(--red)",fontWeight:700,marginBottom:6}}>{SYNC_ERROR||"Unknown error"}</div>
+                <div style={{color:"var(--muted)"}}>
+                  Fixes to try:<br/>
+                  1. Check internet and reload the page<br/>
+                  2. Go to jsonbin.io and confirm account is active<br/>
+                  3. API key must start with $2b$...<br/>
                 </div>
-              </div>
-            ))}
-            <div style={{background:"var(--grn-bg)",borderRadius:12,padding:"10px 14px",fontSize:12,color:"var(--grn)",marginTop:4}}>
-              💡 Firebase free plan allows 50,000 reads and 20,000 writes per day - more than enough for a shop.
+              </div>}
             </div>
-          </div>
-        )}
-
-        {/* Backup export (still useful even with Firebase) */}
-        <div style={{background:"var(--surf2)",border:"1.5px solid var(--brd2)",borderRadius:16,padding:16,marginBottom:14}}>
-          <div style={{fontWeight:700,marginBottom:6}}>💾 Data Backup</div>
-          <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>Download a copy of all your data as a safety backup.</div>
-          <Btn label="📤 Export Backup (.json)" color="ghost" onClick={()=>{
-            const keys=["sf_products","sf_sales","sf_purchases","sf_expenses","sf_customers","sf_suppliers","sf_users"];
-            const out={};
-            keys.forEach(k=>{const v=localStorage.getItem(k);if(v)out[k]=v;});
-            const blob=new Blob([JSON.stringify(out)],{type:"application/json"});
-            const a=document.createElement("a");
-            a.href=URL.createObjectURL(blob);
-            a.download="shopflow-backup-"+new Date().toISOString().slice(0,10)+".json";
-            a.click();
-          }} block/>
-        </div>
-
-        {/* Netlify guide */}
-        <div style={{background:"var(--surf2)",border:"1.5px solid var(--brd2)",borderRadius:16,padding:16,marginBottom:14}}>
-          <div style={{fontWeight:700,marginBottom:8}}>🌐 Update your Netlify site</div>
-          <div style={{fontSize:13,lineHeight:2}}>1. Download the new HTML file<br/>2. Go to your Netlify dashboard<br/>3. Drag the file onto the deploy area<br/>4. Done - same URL, updated instantly</div>
-        </div>
-        <Btn label="Sign Out" color="ghost" onClick={onSignOut} block/>
-        {sheet==="u" && (
-          <Sheet title={editing?"Edit User":"Add User"} onClose={()=>setSheet(null)}>
-            <TextInput label="Full Name *" value={form.name||""} onChange={F("name")}/>
-            <TextInput label="PIN (4-6 digits) *" type="password" value={form.pin||""} onChange={e=>setForm(f=>({...f,pin:e.target.value.replace(/\D/g,"").slice(0,6)}))} inputMode="numeric" maxLength={6}/>
-            <SelectInput label="Role" value={form.role||"Cashier"} onChange={F("role")} options={ROLES}/>
-            <TextInput label="Avatar letter" value={form.avatar||""} onChange={e=>setForm(f=>({...f,avatar:e.target.value.slice(0,1).toUpperCase()}))} maxLength={1}/>
-            <Btn label="Save User" onClick={()=>{
-              if(!form.name?.trim()||!form.pin){toast("Name & PIN required","error");return;}
-              onUpdate("users",editing?users.map(u=>u.id===editing?form:u):[form,...users]);
-              setSheet(null);toast("Saved!","success");
-            }} block/>
-          </Sheet>
-        )}
+          );
+        })()}
       </div>
     );
   }
@@ -2098,7 +2034,7 @@ function App() {
         {tab==="sales"     && <SalesPage  data={data} onSale={onSale} onEditSale={onEditSale} onDeleteSale={onDeleteSale} toast={toast}/>}
         {tab==="stock"     && <StockPage  data={data} onUpdate={upd} onPurchase={onPurchase} toast={toast}/>}
         {tab==="expenses"  && <ExpensesPage  data={data} onExpense={onExpense}   toast={toast}/>}
-        {tab==="more"      && <MorePage      data={data} onUpdate={upd} toast={toast} onSignOut={()=>setUser(null)}/>}
+        {tab==="more"      && <MorePage      data={data} onUpdate={upd} toast={toast} onSignOut={()=>setUser(null)} syncStatus={syncStatus} binId={_binId}/>}
       </div>
 
       {/* FIXED BOTTOM NAV */}

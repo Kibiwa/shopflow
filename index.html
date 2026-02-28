@@ -143,9 +143,8 @@ const DB = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
-/* ── Bin ID: stored in localStorage so it survives file updates ── */
-let _binId = localStorage.getItem("sf_bin_id") || "69a094e043b1c97be9a12778";
-localStorage.setItem("sf_bin_id", _binId);
+/* —— Fixed shared Bin ID (same database for all devices) —— */
+let _binId = "69a094e043b1c97be9a12778";
 
 let SYNC_READY = false;
 let SYNC_ERROR = null;
